@@ -1,0 +1,31 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ssmproxy"
+version = "0.1.0"
+description = "Skeleton for the ssmproxy evaluation toolkit"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "OpenAI Eval" }]
+requires-python = ">=3.9"
+dependencies = [
+  "typer>=0.12",
+  "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+test = [
+  "pytest>=8",
+]
+
+[project.scripts]
+ssmproxy = "ssmproxy.cli:app"
+
+[tool.hatch.build]
+packages = ["src/ssmproxy"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
