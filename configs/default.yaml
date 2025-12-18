@@ -1,0 +1,12 @@
+# Default configuration for ssmproxy scaffold
+run_mode: development
+logging:
+  level: INFO
+evaluation:
+  input_dir: ./data/eval
+  output_dir: ./data/results
+pc:
+  enabled: false
+  config_path: ./configs/pc.yaml
+toy:
+  output: ./toy-output
