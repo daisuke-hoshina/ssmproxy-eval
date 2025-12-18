@@ -1,6 +1,6 @@
 [build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
 
 [project]
 name = "ssmproxy"
@@ -23,8 +23,6 @@ test = [
 [project.scripts]
 ssmproxy = "ssmproxy.cli:app"
 
-[tool.hatch.build]
-packages = ["src/ssmproxy"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
