@@ -4,6 +4,7 @@ from typing import Optional
 import typer
 
 from .pipeline import RunConfig, run_evaluation
+from .toy_generator import generate_corpus
 
 app = typer.Typer(help="Command line interface for the ssmproxy toolkit.")
 
@@ -33,10 +34,16 @@ toy_app = typer.Typer(help="Commands for toy examples and utilities.")
 
 
 @toy_app.command("generate")
-def toy_generate(output: Optional[Path] = typer.Option(None, "--output", "-o", resolve_path=True)) -> None:
-    """Generate toy data or configuration placeholders."""
-    target = output if output else Path.cwd() / "toy-output"
-    typer.echo(f"Generating toy artifacts at: {target}")
+def toy_generate(
+    out_dir: Path = typer.Option(..., "--out-dir", "-o", resolve_path=True),
+    variants: int = typer.Option(1, "--variants", "-n", help="Number of variants per pattern."),
+    seed: int = typer.Option(0, "--seed", help="Seed for reproducible generation."),
+) -> None:
+    """Generate toy MIDI corpora demonstrating structural patterns."""
+
+    pieces = generate_corpus(out_dir, variants=variants, seed=seed)
+    typer.echo(f"Wrote {len(pieces)} pieces to {out_dir}")
+    typer.echo(f"Manifest saved to {out_dir / 'manifest.csv'}")
 
 
 pc_app = typer.Typer(help="Commands related to proxy compute operations.")
