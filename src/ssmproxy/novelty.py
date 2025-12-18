@@ -4,20 +4,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Sequence
 
-import numpy as np
-from scipy.signal import find_peaks
-
 
 @dataclass
 class NoveltyResult:
     """Container for novelty computation outputs."""
 
-    novelty: np.ndarray
-    peaks: np.ndarray
+    novelty: list[float]
+    peaks: list[int]
     stats: Dict[str, float]
 
 
-def _build_checkerboard_kernel(L: int) -> np.ndarray:
+def _build_checkerboard_kernel(L: int) -> list[list[float]]:
     """Create a Foote-style checkerboard kernel.
 
     The kernel emphasizes contrast across the diagonal by assigning positive
@@ -32,13 +29,18 @@ def _build_checkerboard_kernel(L: int) -> np.ndarray:
         raise ValueError("Kernel half-size L must be positive")
 
     size = 2 * L + 1
-    kernel = np.ones((size, size), dtype=float)
+    kernel = [[1.0 for _ in range(size)] for _ in range(size)]
 
-    kernel[:L, L:] = -1.0
-    kernel[L + 1 :, :L] = -1.0
+    for r in range(L):
+        for c in range(L + 1, size):
+            kernel[r][c] = -1.0
+    for r in range(L + 1, size):
+        for c in range(L):
+            kernel[r][c] = -1.0
 
-    kernel[L, :] = 0.0
-    kernel[:, L] = 0.0
+    for i in range(size):
+        kernel[L][i] = 0.0
+        kernel[i][L] = 0.0
 
     return kernel
 
@@ -61,47 +63,96 @@ def compute_novelty(ssm: Sequence[Sequence[float]], L: int) -> NoveltyResult:
         indices, and summary statistics.
     """
 
-    matrix = np.asarray(ssm, dtype=float)
-    if matrix.ndim != 2 or matrix.shape[0] != matrix.shape[1]:
+    size = len(ssm)
+    if any(len(row) != size for row in ssm):
         raise ValueError("SSM must be a square 2D matrix")
-
-    B = matrix.shape[0]
+    B = size
     kernel = _build_checkerboard_kernel(L)
 
-    padded = np.pad(matrix, pad_width=L, mode="constant")
-    novelty = np.zeros(B, dtype=float)
+    padded = _pad_matrix(ssm, L)
+    novelty: list[float] = [0.0 for _ in range(B)]
 
     for i in range(B):
-        window = padded[i : i + 2 * L + 1, i : i + 2 * L + 1]
-        novelty[i] = float(np.sum(window * kernel))
+        window_sum = 0.0
+        for r in range(2 * L + 1):
+            for c in range(2 * L + 1):
+                window_sum += padded[i + r][i + c] * kernel[r][c]
+        novelty[i] = window_sum
 
-    if novelty.size == 0:
-        normalized_novelty = novelty
+    if not novelty:
+        normalized_novelty: list[float] = []
     else:
-        min_val = float(novelty.min())
-        max_val = float(novelty.max())
+        min_val = min(novelty)
+        max_val = max(novelty)
         if max_val > min_val:
-            normalized_novelty = (novelty - min_val) / (max_val - min_val)
+            normalized_novelty = [(value - min_val) / (max_val - min_val) for value in novelty]
         else:
-            normalized_novelty = np.zeros_like(novelty)
+            normalized_novelty = [0.0 for _ in novelty]
 
-    peaks, properties = find_peaks(normalized_novelty, prominence=0.10, distance=L)
-    prominences = properties.get("prominences", np.array([]))
-    intervals = np.diff(peaks)
+    peaks = _find_peaks(normalized_novelty, min_distance=L, prominence=0.10)
+    prominences = [_peak_prominence(normalized_novelty, idx) for idx in peaks]
+    intervals = [peaks[i + 1] - peaks[i] for i in range(len(peaks) - 1)]
 
-    prom_mean = float(np.mean(prominences)) if prominences.size else 0.0
-    prom_median = float(np.median(prominences)) if prominences.size else 0.0
-    interval_mean = float(np.mean(intervals)) if intervals.size else 0.0
-    interval_cv = (
-        float(np.std(intervals) / interval_mean) if intervals.size and interval_mean else 0.0
-    )
+    prom_mean = sum(prominences) / len(prominences) if prominences else 0.0
+    prom_median = _median(prominences) if prominences else 0.0
+    interval_mean = sum(intervals) / len(intervals) if intervals else 0.0
+    interval_cv = (_std(intervals, interval_mean) / interval_mean) if intervals and interval_mean else 0.0
 
     stats = {
         "peak_rate": float(len(peaks) / B) if B else 0.0,
-        "prom_mean": prom_mean,
-        "prom_median": prom_median,
-        "interval_mean": interval_mean,
-        "interval_cv": interval_cv,
+        "prom_mean": float(prom_mean),
+        "prom_median": float(prom_median),
+        "interval_mean": float(interval_mean),
+        "interval_cv": float(interval_cv),
     }
 
     return NoveltyResult(novelty=normalized_novelty, peaks=peaks, stats=stats)
+
+
+def _pad_matrix(matrix: Sequence[Sequence[float]], L: int) -> list[list[float]]:
+    size = len(matrix)
+    padded_size = size + 2 * L
+    padded = [[0.0 for _ in range(padded_size)] for _ in range(padded_size)]
+    for r in range(size):
+        for c in range(size):
+            padded[r + L][c + L] = float(matrix[r][c])
+    return padded
+
+
+def _find_peaks(values: Sequence[float], min_distance: int, prominence: float) -> list[int]:
+    peaks: list[int] = []
+    last_peak = -min_distance - 1
+    for i in range(1, len(values) - 1):
+        if i - last_peak < min_distance:
+            continue
+        left = values[i - 1]
+        right = values[i + 1]
+        current = values[i]
+        if current > left and current >= right and _peak_prominence(values, i) >= prominence:
+            peaks.append(i)
+            last_peak = i
+    return peaks
+
+
+def _peak_prominence(values: Sequence[float], index: int) -> float:
+    current = values[index]
+    left_min = min(values[: index + 1]) if index > 0 else current
+    right_min = min(values[index:]) if index < len(values) - 1 else current
+    baseline = max(left_min, right_min)
+    return current - baseline
+
+
+def _median(values: Sequence[float]) -> float:
+    sorted_vals = sorted(values)
+    n = len(sorted_vals)
+    mid = n // 2
+    if n % 2:
+        return sorted_vals[mid]
+    return (sorted_vals[mid - 1] + sorted_vals[mid]) / 2
+
+
+def _std(values: Sequence[float], mean_val: float) -> float:
+    if not values:
+        return 0.0
+    variance = sum((v - mean_val) ** 2 for v in values) / len(values)
+    return variance ** 0.5

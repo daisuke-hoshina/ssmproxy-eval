@@ -1,33 +1,35 @@
-import numpy as np
 import pytest
 
 from ssmproxy.novelty import compute_novelty
 
 
+def _block_diagonal_ssm(block_size: int) -> list[list[float]]:
+    block = [[1.0 for _ in range(block_size)] for _ in range(block_size)]
+    zero = [[0.0 for _ in range(block_size)] for _ in range(block_size)]
+    top = [block_row + zero_row for block_row, zero_row in zip(block, zero)]
+    bottom = [zero_row + block_row for zero_row, block_row in zip(zero, block)]
+    return top + bottom
+
+
 def test_block_diagonal_peak_detection():
-    # Construct a block-diagonal SSM with a clear boundary
-    block = np.ones((3, 3))
-    zero = np.zeros((3, 3))
-    ssm = np.block([[block, zero], [zero, block]])
+    ssm = _block_diagonal_ssm(3)
 
     L = 1
     result = compute_novelty(ssm, L)
 
-    assert result.novelty.shape == (6,)
-    assert np.all(result.novelty >= 0.0)
-    assert np.all(result.novelty <= 1.0)
+    assert len(result.novelty) == 6
+    assert all(0.0 <= value <= 1.0 for value in result.novelty)
 
     # Expect a strong novelty response near the block boundary
     assert any(peak in (2, 3) for peak in result.peaks)
     assert len(result.peaks) >= 1
-    assert result.stats["peak_rate"] == pytest.approx(len(result.peaks) / ssm.shape[0])
+    assert result.stats["peak_rate"] == pytest.approx(len(result.peaks) / len(ssm))
     assert result.stats["prom_mean"] >= 0.10
     assert result.stats["prom_median"] >= 0.10
 
 
 def test_interval_stats_single_peak():
-    block = np.ones((2, 2))
-    ssm = np.block([[block, np.zeros((2, 2))], [np.zeros((2, 2)), block]])
+    ssm = _block_diagonal_ssm(2)
     result = compute_novelty(ssm, L=1)
 
     assert result.stats["interval_mean"] == 0.0

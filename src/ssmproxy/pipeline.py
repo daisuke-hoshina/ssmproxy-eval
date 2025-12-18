@@ -1,0 +1,88 @@
+"""End-to-end evaluation pipeline for MIDI directories."""
+
+from __future__ import annotations
+
+from dataclasses import asdict, dataclass
+from datetime import datetime
+from pathlib import Path
+from typing import Iterable, List, Sequence
+
+import yaml
+
+from .bar_features import compute_bar_features_from_path
+from .lag import compute_lag_energy
+from .metrics import PieceMetrics, build_piece_metrics, write_metrics_csv
+from .novelty import NoveltyResult, compute_novelty
+from .plots import save_novelty_plot, save_ssm_plot
+from .ssm import compute_ssm
+
+
+@dataclass
+class RunConfig:
+    """Configuration for an evaluation run."""
+
+    input_dir: Path
+    output_root: Path = Path("outputs")
+    run_id: str | None = None
+    novelty_L: int = 8
+    lag_top_k: int = 2
+
+    def resolved_run_id(self) -> str:
+        return self.run_id or datetime.now().strftime("%Y%m%d-%H%M%S")
+
+
+def _iter_midi_files(input_dir: Path) -> Iterable[Path]:
+    exts = {".mid", ".midi"}
+    for path in sorted(input_dir.rglob("*")):
+        if path.is_file() and path.suffix.lower() in exts:
+            yield path
+
+
+def _safe_compute_novelty(ssm: Sequence[Sequence[float]], L: int) -> NoveltyResult | None:
+    if not ssm or any(len(row) != len(ssm) for row in ssm):
+        return None
+
+    size = len(ssm)
+    tuned_L = max(1, min(L, max(1, size // 2)))
+    return compute_novelty(ssm, L=tuned_L)
+
+
+def run_evaluation(config: RunConfig) -> Path:
+    """Run the evaluation pipeline and return the output directory."""
+
+    run_id = config.resolved_run_id()
+    output_dir = config.output_root / run_id
+    figures_dir = output_dir / "figures"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Persist resolved configuration snapshot for reproducibility.
+    config_snapshot_path = output_dir / "config.yaml"
+    with config_snapshot_path.open("w", encoding="utf-8") as fp:
+        yaml.safe_dump(asdict(config) | {"run_id": run_id}, fp)
+
+    metrics: List[PieceMetrics] = []
+
+    for midi_path in _iter_midi_files(config.input_dir):
+        piece_id, pch, onh = compute_bar_features_from_path(midi_path)
+        ssm = compute_ssm(pch, onh, map_to_unit_interval=True)
+
+        novelty = _safe_compute_novelty(ssm, L=config.novelty_L)
+        lag_energy, best_lag, _ = compute_lag_energy(ssm, top_k=config.lag_top_k, return_full=True)
+
+        metrics.append(
+            build_piece_metrics(
+                piece_id=piece_id,
+                num_bars=len(pch),
+                novelty=novelty,
+                lag_energy=lag_energy,
+                best_lag=best_lag,
+            )
+        )
+
+        if ssm:
+            save_ssm_plot(ssm, figures_dir / "ssm" / f"{piece_id}.png")
+        if novelty:
+            save_novelty_plot(novelty.novelty, novelty.peaks, figures_dir / "novelty" / f"{piece_id}.png")
+
+    write_metrics_csv(output_dir / "metrics.csv", metrics)
+    return output_dir
