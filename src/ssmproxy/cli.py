@@ -5,7 +5,7 @@ import typer
 
 from .config import DEFAULT_CONFIG_PATH, get_run_defaults, load_config
 from .pipeline import RunConfig, run_evaluation
-from .report import generate_report
+from .report import generate_report, resolve_metrics_csv
 from .toy_generator import generate_corpus
 
 app = typer.Typer(help="Command line interface for the ssmproxy toolkit.")
@@ -82,7 +82,11 @@ report_app = typer.Typer(help="Commands for generating summary reports.")
 def report_run(
     eval_out: Path = typer.Option(..., "--eval-out", "-e", resolve_path=True, help="Path to an evaluation output dir."),
     metrics_csv: Optional[Path] = typer.Option(
-        None, "--metrics-csv", "-m", resolve_path=True, help="Path to metrics.csv (defaults to <eval_out>/metrics.csv)."
+        None,
+        "--metrics-csv",
+        "-m",
+        resolve_path=True,
+        help="Path to metrics CSV (defaults to <eval_out>/metrics/ssm_proxy.csv, falling back to metrics.csv).",
     ),
     out_dir: Optional[Path] = typer.Option(
         None, "--out-dir", "-o", resolve_path=True, help="Directory to write summary outputs."
@@ -95,9 +99,9 @@ def report_run(
         help="Optional manifest.csv containing extra metadata to join on piece_id.",
     ),
 ) -> None:
-    """Generate grouped summaries and figures from metrics.csv."""
+    """Generate grouped summaries and figures from the metrics CSV."""
 
-    metrics_path = metrics_csv or eval_out / "metrics.csv"
+    metrics_path = resolve_metrics_csv(eval_out, metrics_csv)
     summary_dir = out_dir or eval_out / "summary"
     artifacts = generate_report(metrics_csv=metrics_path, out_dir=summary_dir, group_col=group_col, manifest=manifest)
     typer.echo(f"Wrote summary artifacts to {summary_dir}")

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, asdict
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Sequence
 
 from .novelty import NoveltyResult
 
@@ -66,20 +66,51 @@ def build_piece_metrics(
     )
 
 
-def write_metrics_csv(output_path: Path, rows: Iterable[PieceMetrics]) -> None:
-    """Write metrics to CSV with a stable column order."""
+CANONICAL_METRICS_REL_PATH = Path("metrics") / "ssm_proxy.csv"
+LEGACY_METRICS_FILENAME = Path("metrics.csv")
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    rows_list: List[PieceMetrics] = list(rows)
+
+def canonical_metrics_path(run_dir: Path) -> Path:
+    """Return the canonical metrics path under a run directory."""
+
+    return run_dir / CANONICAL_METRICS_REL_PATH
+
+
+def legacy_metrics_path(run_dir: Path) -> Path:
+    """Return the legacy metrics path under a run directory."""
+
+    return run_dir / LEGACY_METRICS_FILENAME
+
+
+def _serialize_metrics(rows: Sequence[PieceMetrics]) -> str:
     columns = list(PieceMetrics.__annotations__.keys())
-
     lines = [",".join(columns)]
-    for row in rows_list:
+    for row in rows:
         values = []
         row_dict = row.as_dict()
         for column in columns:
             value = row_dict[column]
             values.append("" if value is None else str(value))
         lines.append(",".join(values))
+    return "\n".join(lines) + "\n"
 
-    output_path.write_text("\n".join(lines) + "\n")
+
+def write_metrics_csv(output_path: Path, rows: Iterable[PieceMetrics], *, extra_paths: Iterable[Path] | None = None) -> None:
+    """Write metrics to CSV with a stable column order.
+
+    Args:
+        output_path: Primary path to write.
+        rows: Metrics rows to persist.
+        extra_paths: Optional additional paths to write the same CSV to (for backward compatibility).
+    """
+
+    rows_list: List[PieceMetrics] = list(rows)
+    csv_text = _serialize_metrics(rows_list)
+
+    paths = [output_path]
+    if extra_paths:
+        paths.extend(extra_paths)
+
+    for path in paths:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(csv_text)

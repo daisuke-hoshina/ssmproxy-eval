@@ -26,12 +26,15 @@ def test_pipeline_produces_artifacts(tmp_path: Path):
     )
 
     config_snapshot = run_dir / "config.yaml"
-    metrics_csv = run_dir / "metrics.csv"
+    metrics_csv = run_dir / "metrics" / "ssm_proxy.csv"
+    legacy_metrics_csv = run_dir / "metrics.csv"
     ssm_png = run_dir / "figures" / "ssm" / "example.png"
     novelty_png = run_dir / "figures" / "novelty" / "example.png"
 
     assert config_snapshot.is_file()
     assert metrics_csv.is_file()
+    if legacy_metrics_csv.is_file():
+        assert legacy_metrics_csv.read_text() == metrics_csv.read_text()
     assert ssm_png.is_file()
     assert novelty_png.is_file()
 

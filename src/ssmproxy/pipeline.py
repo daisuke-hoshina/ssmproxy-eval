@@ -12,7 +12,7 @@ import yaml
 from .config import get_run_defaults
 from .bar_features import compute_bar_features_from_path
 from .lag import compute_lag_energy
-from .metrics import PieceMetrics, build_piece_metrics, write_metrics_csv
+from .metrics import PieceMetrics, build_piece_metrics, canonical_metrics_path, legacy_metrics_path, write_metrics_csv
 from .novelty import NoveltyResult, compute_novelty
 from .plots import save_novelty_plot, save_ssm_plot
 from .ssm import compute_ssm
@@ -104,5 +104,6 @@ def run_evaluation(config: RunConfig) -> Path:
         if novelty:
             save_novelty_plot(novelty.novelty, novelty.peaks, figures_dir / "novelty" / f"{piece_id}.png")
 
-    write_metrics_csv(output_dir / "metrics.csv", metrics)
+    metrics_path = canonical_metrics_path(output_dir)
+    write_metrics_csv(metrics_path, metrics, extra_paths=[legacy_metrics_path(output_dir)])
     return output_dir
