@@ -39,6 +39,10 @@ def test_pipeline_produces_artifacts(tmp_path: Path):
         reader = list(csv.DictReader(fp))
     assert any(row["piece_id"] == "example" for row in reader)
     assert all("lag_min_lag" in row for row in reader)
+    assert all("group" in row for row in reader)
+    assert reader[0]["group"] == ""
+    assert reader[0]["midi_path"] == "example.mid"
+    assert reader[0]["bars"] == reader[0]["num_bars"]
 
     with config_snapshot.open() as fp:
         config_data = yaml.safe_load(fp)

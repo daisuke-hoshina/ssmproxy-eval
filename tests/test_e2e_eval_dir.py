@@ -24,8 +24,9 @@ def _write_test_midi(path: Path) -> None:
 
 def test_cli_eval_dir_generates_outputs(tmp_path: Path) -> None:
     midi_dir = tmp_path / "midi"
-    midi_dir.mkdir()
-    midi_path = midi_dir / "cli_piece.mid"
+    group_dir = midi_dir / "repeat"
+    group_dir.mkdir(parents=True)
+    midi_path = group_dir / "cli_piece.mid"
     _write_test_midi(midi_path)
 
     output_root = tmp_path / "outputs"
@@ -53,11 +54,13 @@ def test_cli_eval_dir_generates_outputs(tmp_path: Path) -> None:
     metrics_csv = run_dir / "metrics.csv"
     ssm_dir = run_dir / "figures" / "ssm"
     novelty_dir = run_dir / "figures" / "novelty"
+    summary_dir = run_dir / "summary"
 
     assert config_snapshot.is_file()
     assert metrics_csv.is_file()
     assert any(ssm_dir.glob("*.png"))
     assert any(novelty_dir.glob("*.png"))
+    assert not list((run_dir / "figures" / "lag").glob("*.png"))
 
     with config_snapshot.open() as fp:
         config_data = yaml.safe_load(fp)
@@ -69,3 +72,29 @@ def test_cli_eval_dir_generates_outputs(tmp_path: Path) -> None:
 
     assert any(row.get("piece_id") == "cli_piece" for row in rows)
     assert all("lag_min_lag" in row for row in rows)
+    assert all("group" in row for row in rows)
+    assert rows[0]["group"] == "repeat"
+    assert rows[0]["midi_path"] == "repeat/cli_piece.mid"
+    assert rows[0]["bars"] == rows[0]["num_bars"]
+
+    runner = CliRunner()
+    report_result = runner.invoke(
+        app,
+        [
+            "report",
+            "run",
+            "--eval-out",
+            str(run_dir),
+        ],
+    )
+    assert report_result.exit_code == 0, report_result.output
+
+    joined_csv = summary_dir / "metrics_joined.csv"
+    group_stats_csv = summary_dir / "metrics_group_stats.csv"
+    figures_dir = summary_dir / "figures"
+
+    assert joined_csv.is_file()
+    assert group_stats_csv.is_file()
+    assert any(figures_dir.glob("boxplot_*.png"))
+    assert any(figures_dir.glob("bar_*.png"))
+    assert (figures_dir / "scatter_novelty_vs_lag.png").is_file()

@@ -5,6 +5,7 @@ import typer
 
 from .config import DEFAULT_CONFIG_PATH, get_run_defaults, load_config
 from .pipeline import RunConfig, run_evaluation
+from .report import generate_report
 from .toy_generator import generate_corpus
 
 app = typer.Typer(help="Command line interface for the ssmproxy toolkit.")
@@ -15,7 +16,9 @@ def eval(
     dir: Path = typer.Argument(..., exists=True, file_okay=False, resolve_path=True),
     output: Optional[Path] = typer.Option(None, "--output", "-o", resolve_path=True),
     run_id: Optional[str] = typer.Option(None, "--run-id"),
-    novelty_L: Optional[int] = typer.Option(None, help="Half-size of the novelty kernel."),
+    novelty_L: Optional[int] = typer.Option(
+        None, "--novelty-l", "--novelty-L", help="Half-size of the novelty kernel."
+    ),
     lag_top_k: Optional[int] = typer.Option(None, help="Number of lag energies to aggregate."),
     lag_min_lag: Optional[int] = typer.Option(None, "--lag-min-lag", help="Minimum lag to consider."),
     exclude_drums: Optional[bool] = typer.Option(
@@ -72,8 +75,39 @@ def pc_run(config: Optional[Path] = typer.Option(None, "--config", "-c", resolve
     typer.echo(f"Starting proxy compute pipeline{details}.")
 
 
+report_app = typer.Typer(help="Commands for generating summary reports.")
+
+
+@report_app.command("run")
+def report_run(
+    eval_out: Path = typer.Option(..., "--eval-out", "-e", resolve_path=True, help="Path to an evaluation output dir."),
+    metrics_csv: Optional[Path] = typer.Option(
+        None, "--metrics-csv", "-m", resolve_path=True, help="Path to metrics.csv (defaults to <eval_out>/metrics.csv)."
+    ),
+    out_dir: Optional[Path] = typer.Option(
+        None, "--out-dir", "-o", resolve_path=True, help="Directory to write summary outputs."
+    ),
+    group_col: str = typer.Option("group", "--group-col", help="Column to use for grouping."),
+    manifest: Optional[Path] = typer.Option(
+        None,
+        "--manifest",
+        resolve_path=True,
+        help="Optional manifest.csv containing extra metadata to join on piece_id.",
+    ),
+) -> None:
+    """Generate grouped summaries and figures from metrics.csv."""
+
+    metrics_path = metrics_csv or eval_out / "metrics.csv"
+    summary_dir = out_dir or eval_out / "summary"
+    artifacts = generate_report(metrics_csv=metrics_path, out_dir=summary_dir, group_col=group_col, manifest=manifest)
+    typer.echo(f"Wrote summary artifacts to {summary_dir}")
+    typer.echo(f"Joined metrics: {artifacts['metrics_joined']}")
+    typer.echo(f"Group stats: {artifacts['group_stats']}")
+
+
 app.add_typer(toy_app, name="toy")
 app.add_typer(pc_app, name="pc")
+app.add_typer(report_app, name="report")
 
 
 if __name__ == "__main__":
