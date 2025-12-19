@@ -10,6 +10,7 @@ import statistics
 from pathlib import Path
 from typing import Iterable, Sequence
 
+from .metrics import canonical_metrics_path, legacy_metrics_path
 from .plots import _write_png
 
 LOGGER = logging.getLogger(__name__)
@@ -47,6 +48,33 @@ def load_metrics(metrics_csv: Path) -> tuple[list[dict[str, str]], list[str]]:
     if not metrics_csv.is_file():
         raise FileNotFoundError(f"Metrics file not found: {metrics_csv}")
     return _read_csv(metrics_csv)
+
+
+def resolve_metrics_csv(eval_out: Path, metrics_csv: Path | None = None) -> Path:
+    """Resolve the metrics CSV path, preferring the canonical location.
+
+    Args:
+        eval_out: Root output directory for the evaluation run.
+        metrics_csv: Optional override path provided via CLI.
+
+    Returns:
+        Path to the metrics CSV to load. If the canonical file is missing, the legacy path is used
+        when it exists; otherwise the canonical path is returned to surface a clear error message.
+    """
+
+    if metrics_csv:
+        return metrics_csv
+
+    canonical_path = canonical_metrics_path(eval_out)
+    if canonical_path.is_file():
+        return canonical_path
+
+    legacy_path = legacy_metrics_path(eval_out)
+    if legacy_path.is_file():
+        LOGGER.warning("Canonical metrics not found at %s; falling back to legacy path %s", canonical_path, legacy_path)
+        return legacy_path
+
+    return canonical_path
 
 
 def join_manifest(metrics: list[dict[str, str]], manifest_path: Path | None, *, columns: list[str]) -> tuple[list[dict[str, str]], list[str]]:

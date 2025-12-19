@@ -51,13 +51,16 @@ def test_cli_eval_dir_generates_outputs(tmp_path: Path) -> None:
 
     run_dir = output_root / "cli-test"
     config_snapshot = run_dir / "config.yaml"
-    metrics_csv = run_dir / "metrics.csv"
+    metrics_csv = run_dir / "metrics" / "ssm_proxy.csv"
+    legacy_metrics_csv = run_dir / "metrics.csv"
     ssm_dir = run_dir / "figures" / "ssm"
     novelty_dir = run_dir / "figures" / "novelty"
     summary_dir = run_dir / "summary"
 
     assert config_snapshot.is_file()
     assert metrics_csv.is_file()
+    if legacy_metrics_csv.is_file():
+        assert legacy_metrics_csv.read_text() == metrics_csv.read_text()
     assert any(ssm_dir.glob("*.png"))
     assert any(novelty_dir.glob("*.png"))
     assert not list((run_dir / "figures" / "lag").glob("*.png"))

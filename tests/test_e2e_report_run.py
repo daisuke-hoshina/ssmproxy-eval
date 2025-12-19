@@ -59,9 +59,11 @@ def test_report_run_end_to_end(tmp_path: Path) -> None:
     assert eval_result.exit_code == 0, eval_result.output
 
     run_dir = output_root / run_id
-    metrics_candidates = [run_dir / "metrics.csv", run_dir / "metrics" / "ssm_proxy.csv"]
-    metrics_path = next((path for path in metrics_candidates if path.is_file()), None)
-    assert metrics_path is not None
+    metrics_path = run_dir / "metrics" / "ssm_proxy.csv"
+    legacy_metrics_path = run_dir / "metrics.csv"
+    assert metrics_path.is_file()
+    if legacy_metrics_path.is_file():
+        assert legacy_metrics_path.read_text() == metrics_path.read_text()
 
     report_result = runner.invoke(
         app,
