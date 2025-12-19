@@ -79,6 +79,12 @@ def run_evaluation(config: RunConfig) -> Path:
             ssm, min_lag=config.lag_min_lag, top_k=config.lag_top_k, return_full=True
         )
 
+        try:
+            relative_path = midi_path.relative_to(config.input_dir)
+        except ValueError:
+            relative_path = midi_path
+        group = relative_path.parts[0] if len(relative_path.parts) > 1 else ""
+
         metrics.append(
             build_piece_metrics(
                 piece_id=piece_id,
@@ -87,6 +93,9 @@ def run_evaluation(config: RunConfig) -> Path:
                 lag_energy=lag_energy,
                 best_lag=best_lag,
                 lag_min_lag=config.lag_min_lag,
+                midi_path=str(relative_path.as_posix()),
+                group=group,
+                bars=len(pch),
             )
         )
 

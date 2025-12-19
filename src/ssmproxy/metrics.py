@@ -24,6 +24,9 @@ class PieceMetrics:
     lag_energy: float
     lag_best: int | None
     lag_min_lag: int
+    midi_path: str = ""
+    group: str = ""
+    bars: int = 0
 
     def as_dict(self) -> Dict[str, object]:
         return asdict(self)
@@ -37,9 +40,13 @@ def build_piece_metrics(
     lag_energy: float,
     best_lag: int | None,
     lag_min_lag: int,
+    midi_path: str = "",
+    group: str = "",
+    bars: int | None = None,
 ) -> PieceMetrics:
     """Construct a :class:`PieceMetrics` instance with sensible defaults."""
 
+    resolved_bars = num_bars if bars is None else bars
     novelty_stats = novelty.stats if novelty else {}
     return PieceMetrics(
         piece_id=piece_id,
@@ -53,6 +60,9 @@ def build_piece_metrics(
         lag_energy=float(lag_energy),
         lag_best=best_lag,
         lag_min_lag=lag_min_lag,
+        midi_path=midi_path,
+        group=group,
+        bars=resolved_bars,
     )
 
 
