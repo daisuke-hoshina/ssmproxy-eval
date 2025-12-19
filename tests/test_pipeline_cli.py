@@ -2,6 +2,7 @@ import csv
 from pathlib import Path
 
 import pretty_midi
+import yaml
 
 from ssmproxy.pipeline import RunConfig, run_evaluation
 
@@ -37,3 +38,9 @@ def test_pipeline_produces_artifacts(tmp_path: Path):
     with metrics_csv.open(newline="") as fp:
         reader = list(csv.DictReader(fp))
     assert any(row["piece_id"] == "example" for row in reader)
+    assert all("lag_min_lag" in row for row in reader)
+
+    with config_snapshot.open() as fp:
+        config_data = yaml.safe_load(fp)
+    assert config_data["lag_min_lag"] == 4
+    assert config_data["exclude_drums"] is True

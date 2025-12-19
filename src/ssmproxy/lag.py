@@ -7,7 +7,7 @@ from typing import Iterable, List, Optional, Tuple
 def compute_lag_energy(
     ssm: List[List[float]],
     *,
-    min_lag: int = 1,
+    min_lag: int = 4,
     top_k: int = 1,
     return_full: bool = False,
 ) -> Tuple[float, Optional[int], Optional[List[Optional[float]]]]:

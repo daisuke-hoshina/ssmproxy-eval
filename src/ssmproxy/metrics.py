@@ -23,6 +23,7 @@ class PieceMetrics:
     novelty_interval_cv: float
     lag_energy: float
     lag_best: int | None
+    lag_min_lag: int
 
     def as_dict(self) -> Dict[str, object]:
         return asdict(self)
@@ -35,6 +36,7 @@ def build_piece_metrics(
     novelty: NoveltyResult | None,
     lag_energy: float,
     best_lag: int | None,
+    lag_min_lag: int,
 ) -> PieceMetrics:
     """Construct a :class:`PieceMetrics` instance with sensible defaults."""
 
@@ -50,6 +52,7 @@ def build_piece_metrics(
         novelty_interval_cv=float(novelty_stats.get("interval_cv", 0.0)),
         lag_energy=float(lag_energy),
         lag_best=best_lag,
+        lag_min_lag=lag_min_lag,
     )
 
 
