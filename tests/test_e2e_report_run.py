@@ -12,12 +12,16 @@ def _write_grouped_midi(path: Path, pitches: list[int]) -> None:
     instrument = pretty_midi.Instrument(program=0)
 
     seconds_per_beat = 60.0 / 120.0
+    notes: list[pretty_midi.Note] = []
     for idx, pitch in enumerate(pitches):
         start = idx * seconds_per_beat
         end = start + seconds_per_beat * 0.75
-        instrument.notes.append(pretty_midi.Note(velocity=90, pitch=pitch, start=start, end=end))
+        notes.append(pretty_midi.Note(velocity=90, pitch=pitch, start=start, end=end))
 
+    instrument.notes.extend(notes)
     midi.instruments.append(instrument)
+    assert len(midi.instruments) == 1
+
     path.parent.mkdir(parents=True, exist_ok=True)
     midi.write(str(path))
 
@@ -29,6 +33,9 @@ def test_report_run_end_to_end(tmp_path: Path) -> None:
 
     _write_grouped_midi(repeat_dir / "a.mid", [60, 60, 67, 67])
     _write_grouped_midi(random_dir / "b.mid", [60, 62, 64, 65])
+
+    for midi in (pretty_midi.PrettyMIDI(str(repeat_dir / "a.mid")), pretty_midi.PrettyMIDI(str(random_dir / "b.mid"))):
+        assert len(midi.instruments) == 1
 
     output_root = tmp_path / "outputs"
     run_id = "report-e2e"
