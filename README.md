@@ -81,6 +81,10 @@ Each run produces artifacts under `outputs/<run_id>/`:
 pytest
 ```
 
+> E2E tests require the optional `pretty_midi` dependency. If it is missing, those
+> tests are automatically skipped; installing with `python -m pip install -e ".[dev]"`
+> ensures the full suite (including E2E) is exercised.
+
 ## Paper-ready reporting workflow
 
 1. Generate toy examples (optional): `ssmproxy toy generate --out-dir toy-output --variants 2 --seed 0`
