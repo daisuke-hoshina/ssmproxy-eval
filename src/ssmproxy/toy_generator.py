@@ -177,7 +177,7 @@ def generate_corpus(output_dir: Path, variants: int = 1, seed: int = 0) -> list[
             piece_seed = rng.randint(0, 1_000_000)
             piece = generate_piece(pattern, variant, piece_seed)
             output_path = output_dir / f"{piece.piece_id}.mid"
-            piece.midi.write(output_path)
+            piece.midi.write(str(output_path))
             pieces.append(piece)
     save_manifest(pieces, output_dir / "manifest.csv")
     return pieces
