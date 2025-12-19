@@ -5,6 +5,7 @@ import pytest
 from typer.testing import CliRunner
 
 from ssmproxy.cli import app
+from ssmproxy.metrics import METRICS_COLUMNS
 
 pretty_midi = pytest.importorskip("pretty_midi")
 
@@ -23,7 +24,8 @@ def _write_test_midi(path: Path) -> None:
     midi.write(str(path))
 
 
-def test_metrics_rows_sorted_by_midi_path(tmp_path: Path) -> None:
+@pytest.fixture
+def eval_run(tmp_path: Path) -> Path:
     midi_dir = tmp_path / "inputs" / "group"
     midi_dir.mkdir(parents=True)
     b_path = midi_dir / "b.mid"
@@ -52,11 +54,31 @@ def test_metrics_rows_sorted_by_midi_path(tmp_path: Path) -> None:
 
     assert result.exit_code == 0, result.output
 
-    metrics_csv = output_root / "deterministic" / "metrics" / "ssm_proxy.csv"
+    run_dir = output_root / "deterministic"
+    metrics_csv = run_dir / "metrics" / "ssm_proxy.csv"
     assert metrics_csv.is_file()
+
+    return run_dir
+
+
+def test_metrics_rows_sorted_by_midi_path(eval_run: Path) -> None:
+    metrics_csv = eval_run / "metrics" / "ssm_proxy.csv"
 
     with metrics_csv.open(newline="", encoding="utf-8") as fp:
         rows = list(csv.DictReader(fp))
 
     midi_paths = [row["midi_path"] for row in rows]
     assert midi_paths == ["group/a.mid", "group/b.mid"]
+
+
+def test_metrics_header_matches_columns(eval_run: Path) -> None:
+    metrics_csv = eval_run / "metrics" / "ssm_proxy.csv"
+    legacy_csv = eval_run / "metrics.csv"
+
+    with metrics_csv.open(newline="", encoding="utf-8") as fp:
+        reader = csv.reader(fp)
+        header = next(reader)
+
+    assert header == METRICS_COLUMNS
+    assert legacy_csv.is_file()
+    assert metrics_csv.read_text(encoding="utf-8") == legacy_csv.read_text(encoding="utf-8")
