@@ -17,11 +17,14 @@ def load_midi(path: Path | str) -> tuple[str, pretty_midi.PrettyMIDI]:
     return piece_id, pretty_midi.PrettyMIDI(str(midi_path))
 
 
-def extract_note_on_events(midi: pretty_midi.PrettyMIDI) -> List[NoteOnEvent]:
+def extract_note_on_events(midi: pretty_midi.PrettyMIDI, *, exclude_drums: bool = True) -> List[NoteOnEvent]:
     """Return a sorted list of (start_time_seconds, pitch) tuples from a MIDI object."""
 
     note_ons: List[NoteOnEvent] = []
     for instrument in midi.instruments:
+        if exclude_drums and instrument.is_drum:
+            continue
+
         for note in instrument.notes:
             note_ons.append((note.start, note.pitch))
 

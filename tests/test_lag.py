@@ -29,7 +29,7 @@ def test_detects_strongest_periodic_lag():
 
     assert best_lag == 8
     assert math.isclose(energy, 0.95 + 0.6)
-    assert lag_energies[0] is None
+    assert all(lag_energies[i] is None for i in range(4))
     assert math.isclose(lag_energies[8], 0.95)
     assert math.isclose(lag_energies[16], 0.6)
 

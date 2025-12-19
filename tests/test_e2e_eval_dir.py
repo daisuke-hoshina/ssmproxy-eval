@@ -2,6 +2,7 @@ import csv
 from pathlib import Path
 
 import pretty_midi
+import yaml
 from typer.testing import CliRunner
 
 from ssmproxy.cli import app
@@ -58,7 +59,13 @@ def test_cli_eval_dir_generates_outputs(tmp_path: Path) -> None:
     assert any(ssm_dir.glob("*.png"))
     assert any(novelty_dir.glob("*.png"))
 
+    with config_snapshot.open() as fp:
+        config_data = yaml.safe_load(fp)
+    assert config_data["lag_min_lag"] == 4
+    assert config_data["exclude_drums"] is True
+
     with metrics_csv.open(newline="") as fp:
         rows = list(csv.DictReader(fp))
 
     assert any(row.get("piece_id") == "cli_piece" for row in rows)
+    assert all("lag_min_lag" in row for row in rows)

@@ -23,13 +23,17 @@ def _allocate_bar_arrays(num_bars: int) -> Tuple[List[List[float]], List[List[fl
 
 
 def compute_bar_features(
-    midi: pretty_midi.PrettyMIDI, piece_id: Optional[str] = None
+    midi: pretty_midi.PrettyMIDI, piece_id: Optional[str] = None, *, exclude_drums: bool = True
 ) -> tuple[str, List[List[float]], List[List[float]]]:
     """Compute bar-wise pitch class and onset histograms.
 
     Args:
         midi: Loaded PrettyMIDI object.
         piece_id: Optional identifier for the piece.
+
+    Args:
+        exclude_drums: When True, skip percussion instruments flagged with
+            ``is_drum``.
 
     Returns:
         A tuple of (piece_id, PCH array [bars, 12], ONH array [bars, 16]).
@@ -43,7 +47,7 @@ def compute_bar_features(
     seconds_per_beat = 60.0 / tempo
     seconds_per_step = seconds_per_beat / STEPS_PER_BEAT
 
-    note_on_events = extract_note_on_events(midi)
+    note_on_events = extract_note_on_events(midi, exclude_drums=exclude_drums)
     if not note_on_events:
         return _ensure_piece_id(piece_id), [], []
 
@@ -87,8 +91,10 @@ def compute_bar_features(
     return _ensure_piece_id(piece_id), pch, onh
 
 
-def compute_bar_features_from_path(path: str | bytes | "PathLike[str]") -> tuple[str, List[List[float]], List[List[float]]]:
+def compute_bar_features_from_path(
+    path: str | bytes | "PathLike[str]", *, exclude_drums: bool = True
+) -> tuple[str, List[List[float]], List[List[float]]]:
     """Load a MIDI file and compute bar features."""
 
     piece_id, midi = load_midi(path)
-    return compute_bar_features(midi, piece_id)
+    return compute_bar_features(midi, piece_id, exclude_drums=exclude_drums)
