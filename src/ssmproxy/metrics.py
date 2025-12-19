@@ -6,7 +6,7 @@ import csv
 import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence
+from typing import Iterable, Sequence
 
 from .novelty import NoveltyResult
 
@@ -30,7 +30,7 @@ class PieceMetrics:
     group: str = ""
     bars: int = 0
 
-    def as_dict(self) -> Dict[str, object]:
+    def as_dict(self) -> dict[str, object]:
         return asdict(self)
 
 
@@ -123,7 +123,7 @@ def write_metrics_csv(output_path: Path, rows: Iterable[PieceMetrics], *, extra_
         extra_paths: Optional additional paths to write the same CSV to (for backward compatibility).
     """
 
-    rows_list: List[PieceMetrics] = _sorted_metrics(list(rows))
+    rows_list: list[PieceMetrics] = _sorted_metrics(list(rows))
 
     paths = [output_path]
     if extra_paths:
