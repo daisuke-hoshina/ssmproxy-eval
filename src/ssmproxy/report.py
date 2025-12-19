@@ -27,7 +27,7 @@ else:
 
 
 def _read_csv(path: Path) -> tuple[list[dict[str, str]], list[str]]:
-    with path.open(newline="") as fp:
+    with path.open(newline="", encoding="utf-8") as fp:
         reader = csv.DictReader(fp)
         rows = [row for row in reader]
     return rows, reader.fieldnames or []
@@ -35,7 +35,7 @@ def _read_csv(path: Path) -> tuple[list[dict[str, str]], list[str]]:
 
 def _write_csv(path: Path, fieldnames: Sequence[str], rows: Iterable[dict[str, object]]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="") as fp:
+    with path.open("w", newline="", encoding="utf-8") as fp:
         writer = csv.DictWriter(fp, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
@@ -162,7 +162,7 @@ def compute_group_stats(rows: list[dict[str, str]], group_col: str) -> tuple[lis
     for col in numeric_cols:
         stats_columns.extend([f"{col}_{stat}" for stat in stat_order])
 
-    for group_value, metrics in grouped.items():
+    for group_value, metrics in sorted(grouped.items(), key=lambda item: item[0]):
         entry: dict[str, object] = {group_col: group_value}
         for col, values in metrics.items():
             count = len(values)
@@ -220,7 +220,7 @@ def plot_boxplots(rows: list[dict[str, str]], group_col: str, metric_names: list
             figure_paths.append(output_path)
             continue
 
-        labels = list(grouped.keys())
+        labels = sorted(grouped.keys())
         data = [grouped[label] for label in labels]
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.boxplot(data, labels=labels)
@@ -248,9 +248,9 @@ def plot_bars(rows: list[dict[str, str]], group_col: str, metric_names: list[str
             figure_paths.append(output_path)
             continue
 
-        labels = list(grouped.keys())
-        means = [statistics.fmean(vals) if vals else 0.0 for vals in grouped.values()]
-        stds = [statistics.stdev(vals) if len(vals) > 1 else 0.0 for vals in grouped.values()]
+        labels = sorted(grouped.keys())
+        means = [statistics.fmean(grouped[label]) if grouped[label] else 0.0 for label in labels]
+        stds = [statistics.stdev(grouped[label]) if len(grouped[label]) > 1 else 0.0 for label in labels]
 
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.bar(labels, means, yerr=stds, capsize=4)
@@ -286,7 +286,7 @@ def plot_scatter(
         return output_path
 
     fig, ax = plt.subplots(figsize=(6, 4))
-    for group_value in grouped_novelty.keys():
+    for group_value in sorted(grouped_novelty.keys()):
         xs = grouped_novelty.get(group_value, [])
         ys = grouped_lag.get(group_value, [])
         if not xs or not ys:
