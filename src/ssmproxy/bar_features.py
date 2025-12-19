@@ -30,8 +30,6 @@ def compute_bar_features(
     Args:
         midi: Loaded PrettyMIDI object.
         piece_id: Optional identifier for the piece.
-
-    Args:
         exclude_drums: When True, skip percussion instruments flagged with
             ``is_drum``.
 
