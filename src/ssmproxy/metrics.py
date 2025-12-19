@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+import csv
+import math
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence
 
@@ -30,6 +32,24 @@ class PieceMetrics:
 
     def as_dict(self) -> Dict[str, object]:
         return asdict(self)
+
+
+METRICS_COLUMNS: list[str] = [
+    "piece_id",
+    "num_bars",
+    "num_novelty_peaks",
+    "novelty_peak_rate",
+    "novelty_prom_mean",
+    "novelty_prom_median",
+    "novelty_interval_mean",
+    "novelty_interval_cv",
+    "lag_energy",
+    "lag_best",
+    "lag_min_lag",
+    "midi_path",
+    "group",
+    "bars",
+]
 
 
 def build_piece_metrics(
@@ -82,17 +102,16 @@ def legacy_metrics_path(run_dir: Path) -> Path:
     return run_dir / LEGACY_METRICS_FILENAME
 
 
-def _serialize_metrics(rows: Sequence[PieceMetrics]) -> str:
-    columns = list(PieceMetrics.__annotations__.keys())
-    lines = [",".join(columns)]
-    for row in rows:
-        values = []
-        row_dict = row.as_dict()
-        for column in columns:
-            value = row_dict[column]
-            values.append("" if value is None else str(value))
-        lines.append(",".join(values))
-    return "\n".join(lines) + "\n"
+def _format_value(value: object) -> object:
+    if value is None:
+        return ""
+    if isinstance(value, float) and math.isnan(value):
+        return ""
+    return value
+
+
+def _sorted_metrics(rows: Sequence[PieceMetrics]) -> list[PieceMetrics]:
+    return sorted(rows, key=lambda row: (row.midi_path or row.piece_id))
 
 
 def write_metrics_csv(output_path: Path, rows: Iterable[PieceMetrics], *, extra_paths: Iterable[Path] | None = None) -> None:
@@ -104,8 +123,7 @@ def write_metrics_csv(output_path: Path, rows: Iterable[PieceMetrics], *, extra_
         extra_paths: Optional additional paths to write the same CSV to (for backward compatibility).
     """
 
-    rows_list: List[PieceMetrics] = list(rows)
-    csv_text = _serialize_metrics(rows_list)
+    rows_list: List[PieceMetrics] = _sorted_metrics(list(rows))
 
     paths = [output_path]
     if extra_paths:
@@ -113,4 +131,9 @@ def write_metrics_csv(output_path: Path, rows: Iterable[PieceMetrics], *, extra_
 
     for path in paths:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(csv_text)
+        with path.open("w", newline="", encoding="utf-8") as fp:
+            writer = csv.DictWriter(fp, fieldnames=METRICS_COLUMNS)
+            writer.writeheader()
+            for row in rows_list:
+                row_dict = row.as_dict()
+                writer.writerow({col: _format_value(row_dict.get(col)) for col in METRICS_COLUMNS})

@@ -38,9 +38,12 @@ class RunConfig:
 
 def _iter_midi_files(input_dir: Path) -> Iterable[Path]:
     exts = {".mid", ".midi"}
-    for path in sorted(input_dir.rglob("*")):
-        if path.is_file() and path.suffix.lower() in exts:
-            yield path
+    midi_paths = (
+        path for path in input_dir.rglob("*") if path.is_file() and path.suffix.lower() in exts
+    )
+
+    for path in sorted(midi_paths, key=lambda p: p.relative_to(input_dir).as_posix()):
+        yield path
 
 
 def _safe_compute_novelty(ssm: Sequence[Sequence[float]], L: int) -> NoveltyResult | None:
