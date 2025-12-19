@@ -1,6 +1,7 @@
 import csv
 from pathlib import Path
 
+import pytest
 import pretty_midi
 
 from ssmproxy import toy_generator
@@ -24,7 +25,8 @@ def test_generate_corpus_creates_midi_and_manifest(tmp_path: Path) -> None:
         midi_path = tmp_path / f"{piece.piece_id}.mid"
         assert midi_path.is_file()
         loaded = pretty_midi.PrettyMIDI(midi_path)
-        assert loaded.initial_tempo == toy_generator.BPM
+        _, tempi = loaded.get_tempo_changes()
+        assert pytest.approx(float(tempi[0]), rel=1e-5) == toy_generator.BPM
         assert piece.piece_id == row["piece_id"]
         assert row["pattern"] in toy_generator._GENERATORS
         assert int(row["variant"]) == piece.variant

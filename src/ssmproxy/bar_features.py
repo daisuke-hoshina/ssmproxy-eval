@@ -37,6 +37,8 @@ def compute_bar_features(
 
     tempos_times, tempos = midi.get_tempo_changes()
     tempo = float(tempos[0]) if len(tempos) else 120.0
+    if tempo <= 0:
+        tempo = 120.0
 
     seconds_per_beat = 60.0 / tempo
     seconds_per_step = seconds_per_beat / STEPS_PER_BEAT

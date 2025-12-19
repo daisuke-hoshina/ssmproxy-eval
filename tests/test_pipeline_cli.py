@@ -12,7 +12,7 @@ def _make_simple_midi(output_path: Path) -> None:
     instrument.notes.append(pretty_midi.Note(velocity=100, pitch=60, start=0.0, end=0.5))
     instrument.notes.append(pretty_midi.Note(velocity=100, pitch=64, start=1.0, end=1.5))
     midi.instruments.append(instrument)
-    midi.write(output_path)
+    midi.write(str(output_path))
 
 
 def test_pipeline_produces_artifacts(tmp_path: Path):
