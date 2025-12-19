@@ -1,10 +1,12 @@
 import csv
 from pathlib import Path
 
-import pretty_midi
+import pytest
 from typer.testing import CliRunner
 
 from ssmproxy.cli import app
+
+pretty_midi = pytest.importorskip("pretty_midi")
 
 
 def _write_grouped_midi(path: Path, pitches: list[int]) -> None:

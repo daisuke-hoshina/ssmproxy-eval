@@ -1,11 +1,13 @@
 import csv
 from pathlib import Path
 
-import pretty_midi
+import pytest
 import yaml
 from typer.testing import CliRunner
 
 from ssmproxy.cli import app
+
+pretty_midi = pytest.importorskip("pretty_midi")
 
 
 def _write_test_midi(path: Path) -> None:
