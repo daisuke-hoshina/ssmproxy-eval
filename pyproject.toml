@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "ssmproxy"
@@ -38,8 +38,6 @@ ssmproxy = "ssmproxy.cli:app"
 testpaths = ["tests"]
 pythonpath = ["src"]
 
-[tool.setuptools]
-package-dir = {"" = "src"}
+[tool.hatch.build.targets.wheel]
+packages = ["ssmproxy"]
 
-[tool.setuptools.packages.find]
-where = ["src"]

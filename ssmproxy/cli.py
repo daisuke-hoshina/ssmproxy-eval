@@ -57,10 +57,11 @@ def toy_generate(
     out_dir: Path = typer.Option(..., "--out-dir", "-o", resolve_path=True),
     variants: int = typer.Option(1, "--variants", "-n", help="Number of variants per pattern."),
     seed: int = typer.Option(0, "--seed", help="Seed for reproducible generation."),
+    flat: bool = typer.Option(False, "--flat", help="Output files to a flat directory (legacy behavior)."),
 ) -> None:
     """Generate toy MIDI corpora demonstrating structural patterns."""
 
-    pieces = generate_corpus(out_dir, variants=variants, seed=seed)
+    pieces = generate_corpus(out_dir, variants=variants, seed=seed, flat=flat)
     typer.echo(f"Wrote {len(pieces)} pieces to {out_dir}")
     typer.echo(f"Manifest saved to {out_dir / 'manifest.csv'}")
 
