@@ -8,7 +8,7 @@ from typing import Any, Dict
 import yaml
 
 # Repository-level default configuration file.
-DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[2] / "configs" / "default.yaml"
+DEFAULT_CONFIG_PATH = Path(__file__).resolve().parents[1] / "configs" / "default.yaml"
 
 
 def load_config(config_path: Path | None = None) -> Dict[str, Any]:

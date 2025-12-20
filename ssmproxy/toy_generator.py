@@ -23,6 +23,9 @@ class ToyPiece:
     variant: int
     seed: int
     midi: pretty_midi.PrettyMIDI
+    relative_path: str = ""
+    bars: int = BARS_PER_PIECE
+    bpm: float = BPM
 
 
 NoteTemplate = tuple[float, float, int]
@@ -155,19 +158,37 @@ def generate_piece(pattern: str, variant: int, seed: int) -> ToyPiece:
     rng = random.Random(seed)
     midi = _GENERATORS[pattern](rng)
     piece_id = f"{pattern}_{variant:03d}"
-    return ToyPiece(piece_id=piece_id, pattern=pattern, variant=variant, seed=seed, midi=midi)
+    return ToyPiece(
+        piece_id=piece_id,
+        pattern=pattern,
+        variant=variant,
+        seed=seed,
+        midi=midi,
+        bars=BARS_PER_PIECE,
+        bpm=BPM,
+    )
 
 
 def save_manifest(rows: Iterable[ToyPiece], manifest_path: Path) -> None:
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     with manifest_path.open("w", newline="") as fp:
         writer = csv.writer(fp)
-        writer.writerow(["piece_id", "pattern", "variant", "seed"])
+        writer.writerow(["piece_id", "pattern", "variant", "seed", "relative_path", "bars", "bpm"])
         for piece in rows:
-            writer.writerow([piece.piece_id, piece.pattern, piece.variant, piece.seed])
+            writer.writerow(
+                [
+                    piece.piece_id,
+                    piece.pattern,
+                    piece.variant,
+                    piece.seed,
+                    piece.relative_path,
+                    piece.bars,
+                    piece.bpm,
+                ]
+            )
 
 
-def generate_corpus(output_dir: Path, variants: int = 1, seed: int = 0) -> list[ToyPiece]:
+def generate_corpus(output_dir: Path, variants: int = 1, seed: int = 0, flat: bool = False) -> list[ToyPiece]:
     output_dir.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
     pieces: list[ToyPiece] = []
@@ -176,7 +197,19 @@ def generate_corpus(output_dir: Path, variants: int = 1, seed: int = 0) -> list[
         for variant in range(variants):
             piece_seed = rng.randint(0, 1_000_000)
             piece = generate_piece(pattern, variant, piece_seed)
-            output_path = output_dir / f"{piece.piece_id}.mid"
+
+            if flat:
+                filename = f"{piece.piece_id}.mid"
+                output_path = output_dir / filename
+                piece.relative_path = filename
+            else:
+                group_dir = output_dir / pattern
+                group_dir.mkdir(exist_ok=True)
+                filename = f"{piece.piece_id}.mid"
+                output_path = group_dir / filename
+                # Ensure POSIX-style path for manifest compatibility
+                piece.relative_path = f"{pattern}/{filename}"
+
             piece.midi.write(str(output_path))
             pieces.append(piece)
     save_manifest(pieces, output_dir / "manifest.csv")
