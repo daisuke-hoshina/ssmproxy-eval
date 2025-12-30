@@ -40,11 +40,26 @@ Generate toy MIDI examples:
 ssmproxy toy generate --out-dir toy-output --variants 2 --seed 0
 ```
 
+Dataset management (scan, sample, collect):
+
+```bash
+# 1. Scan and filter MIDI files
+ssmproxy dataset scan --input-dir /raw/midi --out-csv metadata.csv --min-bars 128 --require-4-4
+
+# 2. Randomly sample from the scan result
+ssmproxy dataset sample --in-csv metadata.csv --out-csv sample.csv --n 100 --seed 42
+
+# 3. Collect the sampled files to a new directory
+ssmproxy dataset collect --in-csv sample.csv --out-dir /clean/midi --mode symlink --flatten
+```
+
 Key evaluation options:
 
 - `--lag-min-lag`: Minimum bar lag to consider (defaults to the config value, 4).
 - `--lag-top-k`: Number of lag energies to aggregate.
 - `--exclude-drums/--include-drums`: Toggle whether drum tracks contribute to features (defaults to exclude).
+- `--require-4-4`: Filter to strictly require 4/4 time signature.
+- `--max-bars N`: Limit analysis to the first N bars.
 
 ## Outputs
 
@@ -73,6 +88,7 @@ Each run produces artifacts under `outputs/<run_id>/`:
 | `lag_min_lag` | Minimum lag threshold applied during lag computation. |
 | `midi_path` | Path to the evaluated MIDI relative to the input directory. |
 | `group` | Top-level folder under the evaluated MIDI directory (useful for toy pattern grouping). |
+| `pred_group_rule` | Rule-based prediction of structure group (AABA, ABAB, etc.). |
 | `bars` | Alias for `num_bars`, explicitly marking the bar count used for evaluation. |
 
 ## Run the tests

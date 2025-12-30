@@ -7,11 +7,15 @@ import importlib.util
 import logging
 import math
 import statistics
+import random
 from pathlib import Path
 from typing import Iterable, Sequence
 
 from .metrics import canonical_metrics_path, legacy_metrics_path
 from .plots import _write_png
+
+import json
+import numpy as np
 
 LOGGER = logging.getLogger(__name__)
 
@@ -222,8 +226,36 @@ def plot_boxplots(rows: list[dict[str, str]], group_col: str, metric_names: list
 
         labels = sorted(grouped.keys())
         data = [grouped[label] for label in labels]
+        
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.boxplot(data, labels=labels)
+        
+        # Custom overlays
+        # Check if we should use jitter points for this metric
+        jitter_metrics = {
+            "novelty_peak_rate", 
+            "lag_hierarchy_index", 
+            "novelty_tv", 
+            "novelty_std"
+        }
+        
+        if metric in jitter_metrics:
+            # Add jitter strip plot
+            # Seed for reproducibility as requested
+            rng = random.Random(0)
+            for i, label in enumerate(labels):
+                y_values = grouped[label]
+                # Center x at i+1
+                x_values = [i + 1 + rng.uniform(-0.12, 0.12) for _ in y_values]
+                ax.scatter(x_values, y_values, color='blue', alpha=0.5, s=10, zorder=3)
+        else:
+            # Default mean overlay (e.g. for lag_energy)
+            # Calculate means for overlay
+            means = [statistics.fmean(grouped[label]) if grouped[label] else 0.0 for label in labels]
+            # Overlay means: x-positions are 1, 2, ..., len(labels)
+            x_positions = range(1, len(labels) + 1)
+            ax.scatter(x_positions, means, color='red', marker='o', s=30, label='Mean', zorder=3)
+        
         ax.set_title(f"{metric} by {group_col}")
         ax.set_ylabel(metric)
         fig.tight_layout()
@@ -269,6 +301,7 @@ def plot_scatter(
     novelty_metric_candidates: list[str],
     lag_metric_candidates: list[str],
     output_dir: Path,
+    filename: str = "scatter_novelty_vs_lag.png",
 ) -> Path | None:
     _ensure_dir(output_dir)
     novelty_metric = next((m for m in novelty_metric_candidates if m in rows[0]), None) if rows else None
@@ -278,19 +311,34 @@ def plot_scatter(
         LOGGER.warning("Skipping scatter plot; required metrics missing.")
         return None
 
-    output_path = output_dir / "scatter_novelty_vs_lag.png"
-    grouped_novelty = _collect_values(rows, group_col, novelty_metric)
-    grouped_lag = _collect_values(rows, group_col, lag_metric)
+    output_path = output_dir / filename
+    
+    # Collect paired values to ensure alignment
+    # grouped: dict[group, list[tuple[x, y]]]
+    grouped_points: dict[str, list[tuple[float, float]]] = {}
+    
+    for row in rows:
+        group_value = row.get(group_col, "")
+        x_str = row.get(novelty_metric, "")
+        y_str = row.get(lag_metric, "")
+        
+        if x_str != "" and _is_numeric(x_str) and y_str != "" and _is_numeric(y_str):
+             grouped_points.setdefault(group_value, []).append((float(x_str), float(y_str)))
+
     if plt is None:
-        _save_placeholder(output_path, "scatter novelty vs lag")
+        _save_placeholder(output_path, f"scatter {filename}")
         return output_path
 
+    if not grouped_points:
+         return None
+
     fig, ax = plt.subplots(figsize=(6, 4))
-    for group_value in sorted(grouped_novelty.keys()):
-        xs = grouped_novelty.get(group_value, [])
-        ys = grouped_lag.get(group_value, [])
-        if not xs or not ys:
+    for group_value in sorted(grouped_points.keys()):
+        points = grouped_points[group_value]
+        if not points:
             continue
+        xs = [p[0] for p in points]
+        ys = [p[1] for p in points]
         ax.scatter(xs, ys, label=str(group_value))
 
     ax.set_xlabel(novelty_metric)
@@ -301,6 +349,285 @@ def plot_scatter(
     fig.savefig(output_path)
     plt.close(fig)
     return output_path
+
+
+def plot_lag_spectrum_mean(
+    lag_energies_path: Path, output_dir: Path
+) -> Path | None:
+    _ensure_dir(output_dir)
+    output_path = output_dir / "lag_spectrum_mean_by_group.png"
+
+    if not lag_energies_path.is_file():
+        LOGGER.warning("Lag energies file missing: %s", lag_energies_path)
+        return None
+
+    if plt is None:
+        _save_placeholder(output_path, "lag spectrum mean")
+        return output_path
+
+    # Load and aggregate data
+    grouped_energies: dict[str, list[list[float]]] = {}
+    with lag_energies_path.open("r", encoding="utf-8") as fp:
+        for line in fp:
+            row = json.loads(line)
+            group = row.get("group", "")
+            energies = row.get("lag_energies", [])
+            # Skip empty or null values
+            energies = [e for e in energies if e is not None]
+            if energies:
+                grouped_energies.setdefault(group, []).append(energies)
+
+    if not grouped_energies:
+        return None
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    
+    # Determine max lag for x-axis alignment
+    # Assuming all runs have same lag settings, but to be safe we find max length
+    max_len = 0
+    for group_runs in grouped_energies.values():
+        for run in group_runs:
+            max_len = max(max_len, len(run))
+    
+    for group, runs in sorted(grouped_energies.items()):
+        # Pad shorter runs with NaNs if necessary (though usually they should match)
+        # or just truncate/align. Here we assume alignment by index (lag index).
+        # We'll compute mean per index.
+        
+        # Structure: runs is list of lists.
+        # Check max length for this group
+        g_max_len = max(len(r) for r in runs)
+        
+        # Accumulate sums and counts
+        sums = np.zeros(g_max_len)
+        counts = np.zeros(g_max_len)
+        sq_sums = np.zeros(g_max_len)
+        
+        valid_runs = 0
+        for run in runs:
+            arr = np.array(run)
+            length = len(arr)
+            sums[:length] += arr
+            sq_sums[:length] += arr ** 2
+            counts[:length] += 1
+            valid_runs += 1
+            
+        # Avoid division by zero
+        with np.errstate(invalid='ignore'):
+            means = sums / counts
+            stds = np.sqrt((sq_sums / counts) - (means ** 2))
+            sems = stds / np.sqrt(counts)
+            
+        # x-axis: indices (representing lag 0, 1, 2...)
+        # Note: lag_energies usually starts from lag=0 or lag=min_lag depending on impl.
+        # The pipeline returns valid energies. We plot by index.
+        x = np.arange(g_max_len)
+        
+        # Filter out indices with no data
+        mask = counts > 0
+        ax.errorbar(x[mask], means[mask], yerr=sems[mask], label=str(group), capsize=3, alpha=0.8)
+
+    ax.set_xlabel("Lag Index (offset from min_lag)")
+    ax.set_ylabel("Lag Energy (Mean ± SEM)")
+    ax.set_title("Group Mean Lag Spectrum")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+    return output_path
+
+
+def plot_best_lag_distribution(
+    rows: list[dict[str, str]], group_col: str, output_dir: Path
+) -> Path | None:
+    _ensure_dir(output_dir)
+    output_path = output_dir / "best_lag_distribution_by_group.png"
+    
+    if plt is None:
+        _save_placeholder(output_path, "best lag distribution")
+        return output_path
+
+    grouped = _collect_values(rows, group_col, "lag_best")
+    if not grouped:
+        return None
+
+    labels = sorted(grouped.keys())
+    data = [grouped[label] for label in labels]
+
+    fig, ax = plt.subplots(figsize=(6, 4))
+    # Violin plot for detailed distribution or boxplot
+    # Using boxplot as requested/consistent with others
+    ax.boxplot(data, labels=labels)
+    ax.set_title(f"Best Lag Distribution by {group_col}")
+    ax.set_ylabel("Best Lag Index")
+    ax.set_xlabel(group_col)
+    fig.tight_layout()
+    fig.savefig(output_path)
+    plt.close(fig)
+    return output_path
+
+
+def predict_group_rule(row: dict[str, object]) -> str:
+    """Predict group based on simple rules derived for the toy dataset."""
+
+    def get_float(key: str) -> float | None:
+        val = row.get(key)
+        if val is None or val == "":
+             return None
+        try:
+            f = float(str(val))
+            if math.isfinite(f):
+                return f
+        except (ValueError, TypeError):
+            pass
+        return None
+
+    def get_int(key: str) -> int | None:
+        val = row.get(key)
+        if val is None or val == "":
+             return None
+        try:
+            return int(float(str(val)))
+        except (ValueError, TypeError):
+            return None
+
+    lag_energy = get_float("lag_energy")
+    lag_best = get_int("lag_best")
+    
+    # 1. Random check
+    if lag_energy is not None and lag_energy < 1.2:
+        return "random"
+        
+    if lag_best is None:
+        return "unknown"
+
+    # 2. Branch by best_lag
+    if lag_best == 24:
+        return "AABA"
+    
+    lag_hierarchy_index_auto = get_float("lag_hierarchy_index_auto")
+    lag_hierarchy_index = get_float("lag_hierarchy_index")
+    
+    # Use auto if available, else fixed
+    idx = lag_hierarchy_index_auto if lag_hierarchy_index_auto is not None else lag_hierarchy_index
+    
+    if lag_best == 4:
+        # repeat vs hierarchical
+        if idx is not None and idx > 0.08:
+            return "hierarchical"
+        else:
+            return "repeat"
+            
+    if lag_best == 8:
+        return "hierarchical"
+        
+    if lag_best == 16:
+        # ABAB vs partial_copy
+        if idx is not None and idx < 0:
+            return "ABAB"
+        
+        novelty_peak_rate = get_float("novelty_peak_rate")
+        if novelty_peak_rate is not None and novelty_peak_rate >= 0.07:
+            return "ABAB"
+            
+        return "partial_copy"
+
+    return "unknown"
+
+
+def plot_confusion_matrix(
+    y_true: list[str],
+    y_pred: list[str],
+    labels: list[str],
+    output_dir: Path,
+    filename: str = "confusion_matrix_rule",
+) -> tuple[Path, Path, Path] | None:
+    """Generate confusion matrix artifacts (CSV, PNG, Summary)."""
+    
+    _ensure_dir(output_dir)
+    
+    # Compute confusion matrix
+    # Rows: True, Cols: Pred
+    matrix = {true_label: {pred_label: 0 for pred_label in labels} for true_label in labels}
+    
+    all_labels = set(labels)
+    for t in y_true: all_labels.add(t)
+    for p in y_pred: all_labels.add(p)
+    
+    sorted_labels = sorted(list(all_labels))
+    preferred_order = ["AABA", "ABAB", "hierarchical", "partial_copy", "random", "repeat"]
+    final_labels = [l for l in preferred_order if l in all_labels]
+    for l in sorted_labels:
+        if l not in final_labels:
+            final_labels.append(l)
+            
+    # Re-init matrix with full labels
+    matrix = {t: {p: 0 for p in final_labels} for t in final_labels}
+    
+    correct_count = 0
+    total_count = 0
+    
+    for t, p in zip(y_true, y_pred):
+        if t in matrix and p in matrix[t]:
+             matrix[t][p] += 1
+        
+        if t == p:
+            correct_count += 1
+        total_count += 1
+        
+    accuracy = correct_count / total_count if total_count > 0 else 0.0
+    
+    # Save CSV
+    csv_path = output_dir.parent / f"{filename}.csv"
+    with csv_path.open("w", newline="", encoding="utf-8") as fp:
+        writer = csv.writer(fp)
+        writer.writerow(["true_group \\ pred_group"] + final_labels)
+        for t in final_labels:
+            row = [t] + [matrix[t][p] for p in final_labels]
+            writer.writerow(row)
+            
+    # Save Summary
+    summary_path = output_dir.parent / f"{filename}_summary.txt"
+    with summary_path.open("w", encoding="utf-8") as fp:
+        fp.write(f"accuracy={accuracy:.4f}\n")
+        fp.write(f"count={total_count}\n")
+        fp.write(f"correct={correct_count}\n")
+
+    # Plot Heatmap
+    png_path = output_dir / f"{filename}.png"
+    if plt is None:
+        _save_placeholder(png_path, "confusion matrix")
+        return csv_path, summary_path, png_path
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    
+    # Prepare array for imshow
+    # imshow expects (nrows, ncols)
+    arr = np.array([[matrix[t][p] for p in final_labels] for t in final_labels])
+    
+    im = ax.imshow(arr, cmap="Blues")
+    
+    # We want to show all ticks...
+    ax.set_xticks(np.arange(len(final_labels)))
+    ax.set_yticks(np.arange(len(final_labels)))
+    # ... and label them with the respective list entries
+    ax.set_xticklabels(final_labels, rotation=45, ha="right")
+    ax.set_yticklabels(final_labels)
+
+    # Loop over data dimensions and create text annotations.
+    for i in range(len(final_labels)):
+        for j in range(len(final_labels)):
+            text = ax.text(j, i, arr[i, j],
+                           ha="center", va="center", color="black")
+
+    ax.set_title(f"Confusion Matrix (Rule-Based)\nAccuracy: {accuracy:.2%}")
+    ax.set_xlabel("Predicted Label")
+    ax.set_ylabel("True Label")
+    fig.tight_layout()
+    fig.savefig(png_path)
+    plt.close(fig)
+    
+    return csv_path, summary_path, png_path
 
 
 def generate_report(
@@ -325,7 +652,10 @@ def generate_report(
     figures_dir = out_dir / "figures"
     key_metrics = [metric for metric in ("novelty_peak_rate", "lag_energy") if metric in joined_columns]
     boxplots = plot_boxplots(metrics_joined, group_col, key_metrics, figures_dir)
-    barplots = plot_bars(metrics_joined, group_col, key_metrics, figures_dir)
+    
+    # Exclude lag_energy and novelty_peak_rate from bar plots
+    bar_metrics = [m for m in key_metrics if m not in ("lag_energy", "novelty_peak_rate")]
+    barplots = plot_bars(metrics_joined, group_col, bar_metrics, figures_dir)
     scatter = plot_scatter(
         metrics_joined,
         group_col,
@@ -333,6 +663,63 @@ def generate_report(
         ["lag_energy", "lag_best"],
         figures_dir,
     )
+    
+    # Advanced metrics plots
+    # Boxplot + Jitter for lag_hierarchy_index and novelty_tv (and optionally novelty_std)
+    adv_metrics = ["lag_hierarchy_index", "lag_hierarchy_index_auto", "novelty_tv", "novelty_std"]
+    # Filter only available metrics
+    adv_metrics = [m for m in adv_metrics if m in joined_columns]
+    plot_boxplots(metrics_joined, group_col, adv_metrics, figures_dir)
+    
+    # Scatter plot: x=lag_hierarchy_index, y=novelty_tv
+    plot_scatter(
+        metrics_joined,
+        group_col,
+        ["lag_hierarchy_index"],
+        ["novelty_tv"],
+        figures_dir,
+        filename="lag_hierarchy_index_vs_novelty_tv.png",
+    )
+    
+    # Scatter plot: x=lag_hierarchy_index_auto, y=novelty_tv
+    plot_scatter(
+        metrics_joined,
+        group_col,
+        ["lag_hierarchy_index_auto"],
+        ["novelty_tv"],
+        figures_dir,
+        filename="lag_hierarchy_index_auto_vs_novelty_tv.png",
+    )
+    
+    # New plots
+    lag_spectrum = plot_lag_spectrum_mean(metrics_csv.parent / "lag_energies.jsonl", figures_dir)
+    best_lag_dist = plot_best_lag_distribution(metrics_joined, group_col, figures_dir)
+    
+    # Rule-based classification
+    # Only run if we detect toy classes or if explicitly requested
+    toy_classes = {"AABA", "ABAB", "hierarchical", "partial_copy", "random", "repeat"}
+    actual_groups = set(row.get(group_col, "") for row in metrics_joined)
+    
+    cm_files: tuple[Path, Path, Path] | None = None
+    
+    # Calculate overlap or just run if prediction feasible
+    if not actual_groups.isdisjoint(toy_classes):
+        y_true = []
+        y_pred = []
+        for row in metrics_joined:
+            pred = predict_group_rule(row)
+            row["pred_group_rule"] = pred
+            
+            true_g = row.get(group_col, "")
+            if true_g:
+                y_true.append(true_g)
+                y_pred.append(pred)
+        
+        # Rewrite metrics_joined with prediction
+        joined_columns.append("pred_group_rule")
+        _write_csv(metrics_joined_path, joined_columns, metrics_joined)
+        
+        cm_files = plot_confusion_matrix(y_true, y_pred, list(toy_classes), figures_dir)
 
     artifacts: dict[str, list[Path] | Path] = {
         "metrics_joined": metrics_joined_path,
@@ -342,4 +729,7 @@ def generate_report(
     }
     if scatter:
         artifacts["scatter"] = scatter
+    if cm_files:
+        artifacts["confusion_matrix"] = list(cm_files)
+        
     return artifacts

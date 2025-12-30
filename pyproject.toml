@@ -36,7 +36,7 @@ ssmproxy = "ssmproxy.cli:app"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["."]
 
 [tool.hatch.build.targets.wheel]
 packages = ["ssmproxy"]

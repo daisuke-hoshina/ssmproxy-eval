@@ -33,6 +33,8 @@ def get_run_defaults(config: Dict[str, Any] | None = None) -> Dict[str, Any]:
     cfg = config if config is not None else load_config()
     evaluation_cfg = cfg.get("evaluation", {}) or {}
     lag_cfg = evaluation_cfg.get("lag", {}) or {}
+    ssm_cfg = evaluation_cfg.get("ssm", {}) or {}
+    novelty_peaks_cfg = evaluation_cfg.get("novelty_peaks", {}) or {}
     features_cfg = cfg.get("features", {}) or {}
 
     return {
@@ -40,5 +42,14 @@ def get_run_defaults(config: Dict[str, Any] | None = None) -> Dict[str, Any]:
         "novelty_L": evaluation_cfg.get("novelty_L", 8),
         "lag_top_k": lag_cfg.get("top_k", 2),
         "lag_min_lag": lag_cfg.get("min_lag", 4),
+        "lag_max_lag": lag_cfg.get("max_lag", None),
+        "lag_min_support": lag_cfg.get("min_support", None),
         "exclude_drums": features_cfg.get("exclude_drums", True),
+        "ssm_weight_pch": ssm_cfg.get("weight_pch", 0.5),
+        "ssm_weight_onh": ssm_cfg.get("weight_onh", 0.5),
+        "ssm_map_to_unit_interval": ssm_cfg.get("map_to_unit_interval", True),
+        "novelty_peak_prominence": novelty_peaks_cfg.get("prominence", 0.10),
+        "novelty_peak_min_distance": novelty_peaks_cfg.get("min_distance", None),
+        "require_4_4": evaluation_cfg.get("require_4_4", False),
+        "max_bars": evaluation_cfg.get("max_bars", None),
     }

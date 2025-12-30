@@ -36,17 +36,44 @@ def _note_time(beat: float) -> float:
     return beat * SECONDS_PER_BEAT
 
 
-def _build_bar_template(rng: random.Random, base_pitch: int) -> BarTemplate:
+def _build_bar_template(rng: random.Random, base_pitch: int, pattern: str = "repeat") -> BarTemplate:
     offsets = [-5, -2, 0, 2, 4, 7]
     notes: BarTemplate = []
-    for beat in (0.0, 2.0):
+    
+    # Rhythm implementation:
+    # repeat/default: [0.0, 2.0]
+    # random: random subset of 16th notes
+    # AABA/ABAB: distinct rhythmic motifs for sections (handled by caller passing different base params, but here we can toggle logic)
+    # partial_copy: standard
+    # hierarchical: standard
+    
+    if pattern == "random":
+        # Select 2-4 positions from 16th beat grid
+        grid = [i * 0.25 for i in range(int(BEATS_PER_BAR * 4))]
+        num_notes = rng.randint(2, 4)
+        beats = sorted(rng.sample(grid, num_notes))
+    elif pattern == "hierarchical":
+        # Use off-beats for differentiation
+        beats = [0.0, 1.5, 3.0]
+    else:
+        # Standard distinct rhythm for basic patterns could be varied by variant, but here we keep simple defaults
+        # To differentiate groups by ONH, we need distinct onset patterns.
+        # Let's map patterns to static distinct rhythms for consistency within group.
+        if pattern == "AABA":
+             beats = [0.0, 1.0, 2.0, 3.0] # Quarter notes
+        elif pattern == "ABAB":
+             beats = [0.5, 1.5, 2.5, 3.5] # Off-beats
+        else:
+             beats = [0.0, 2.0] # Half notes (legacy default)
+
+    for beat in beats:
         pitch = base_pitch + rng.choice(offsets)
-        notes.append((beat, 1.0, pitch))
+        notes.append((beat, 0.25, pitch)) # Shorten duration to avoid overlap
     return notes
 
 
-def _build_phrase_template(rng: random.Random, bars: int, base_pitch: int) -> list[BarTemplate]:
-    return [_build_bar_template(rng, base_pitch) for _ in range(bars)]
+def _build_phrase_template(rng: random.Random, bars: int, base_pitch: int, pattern: str = "repeat") -> list[BarTemplate]:
+    return [_build_bar_template(rng, base_pitch, pattern=pattern) for _ in range(bars)]
 
 
 def _write_phrase(instrument: pretty_midi.Instrument, template: Sequence[BarTemplate], start_bar: int) -> None:
@@ -63,7 +90,7 @@ def _mutate_phrase(template: Sequence[BarTemplate], rng: random.Random, change_p
     for bar in template:
         if rng.random() < change_prob:
             base_pitch = rng.choice([58, 60, 62, 65, 67])
-            mutated.append(_build_bar_template(rng, base_pitch))
+            mutated.append(_build_bar_template(rng, base_pitch, pattern="partial_copy"))
         else:
             mutated.append([note for note in bar])
     return mutated
@@ -72,7 +99,7 @@ def _mutate_phrase(template: Sequence[BarTemplate], rng: random.Random, change_p
 def _generate_repeat(rng: random.Random) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    phrase = _build_phrase_template(rng, bars=4, base_pitch=60)
+    phrase = _build_phrase_template(rng, bars=4, base_pitch=60, pattern="repeat")
     for repeat in range(0, BARS_PER_PIECE, 4):
         _write_phrase(instrument, phrase, repeat)
     midi.instruments.append(instrument)
@@ -84,7 +111,7 @@ def _generate_random(rng: random.Random) -> pretty_midi.PrettyMIDI:
     instrument = pretty_midi.Instrument(program=0)
     for bar in range(BARS_PER_PIECE):
         base_pitch = rng.choice([55, 58, 60, 62, 65, 67, 69])
-        _write_phrase(instrument, [_build_bar_template(rng, base_pitch)], bar)
+        _write_phrase(instrument, [_build_bar_template(rng, base_pitch, pattern="random")], bar)
     midi.instruments.append(instrument)
     return midi
 
@@ -92,8 +119,8 @@ def _generate_random(rng: random.Random) -> pretty_midi.PrettyMIDI:
 def _generate_aaba(rng: random.Random) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    phrase_a = _build_phrase_template(rng, bars=8, base_pitch=60)
-    phrase_b = _build_phrase_template(rng, bars=8, base_pitch=67)
+    phrase_a = _build_phrase_template(rng, bars=8, base_pitch=60, pattern="AABA")
+    phrase_b = _build_phrase_template(rng, bars=8, base_pitch=67, pattern="AABA")
     sections = [phrase_a, phrase_a, phrase_b, phrase_a]
     for idx, phrase in enumerate(sections):
         _write_phrase(instrument, phrase, idx * 8)
@@ -104,8 +131,9 @@ def _generate_aaba(rng: random.Random) -> pretty_midi.PrettyMIDI:
 def _generate_abab(rng: random.Random) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    phrase_a = _build_phrase_template(rng, bars=8, base_pitch=62)
-    phrase_b = _build_phrase_template(rng, bars=8, base_pitch=69)
+    instrument = pretty_midi.Instrument(program=0)
+    phrase_a = _build_phrase_template(rng, bars=8, base_pitch=62, pattern="ABAB")
+    phrase_b = _build_phrase_template(rng, bars=8, base_pitch=69, pattern="ABAB")
     sections = [phrase_a, phrase_b, phrase_a, phrase_b]
     for idx, phrase in enumerate(sections):
         _write_phrase(instrument, phrase, idx * 8)
@@ -116,7 +144,8 @@ def _generate_abab(rng: random.Random) -> pretty_midi.PrettyMIDI:
 def _generate_partial_copy(rng: random.Random) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    base_phrase = _build_phrase_template(rng, bars=8, base_pitch=64)
+    instrument = pretty_midi.Instrument(program=0)
+    base_phrase = _build_phrase_template(rng, bars=8, base_pitch=64, pattern="partial_copy")
     altered = _mutate_phrase(base_phrase, rng, change_prob=0.35)
     sections = [base_phrase, altered, base_phrase, altered]
     for idx, phrase in enumerate(sections):
@@ -128,7 +157,8 @@ def _generate_partial_copy(rng: random.Random) -> pretty_midi.PrettyMIDI:
 def _generate_hierarchical(rng: random.Random) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    motif = _build_phrase_template(rng, bars=2, base_pitch=60)
+    instrument = pretty_midi.Instrument(program=0)
+    motif = _build_phrase_template(rng, bars=2, base_pitch=60, pattern="hierarchical")
     phrase: list[BarTemplate] = []
     for i in range(4):
         shift = rng.choice([0, 2, 5]) if i % 2 else 0

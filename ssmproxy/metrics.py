@@ -6,6 +6,7 @@ import csv
 import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
+import statistics
 from typing import Iterable, Sequence
 
 from .novelty import NoveltyResult
@@ -26,6 +27,27 @@ class PieceMetrics:
     lag_energy: float
     lag_best: int | None
     lag_min_lag: int
+    
+    # Advanced Lag Metrics
+    lag_e4: float | None = None
+    lag_e8: float | None = None
+    lag_hierarchy_index: float | None = None
+    lag_mult4_std: float | None = None
+    
+    # Auto Hierarchy Metrics
+    lag_base_period: int | None = None
+    lag_hierarchy_index_auto: float | None = None
+    lag_e_l0: float | None = None
+    lag_e_2l0: float | None = None
+    lag_hierarchy_mult: int | None = None
+    lag_hierarchy_lag_used: int | None = None
+    lag_hierarchy_auto_fallback: bool = False
+    
+    # Advanced Novelty Metrics
+    novelty_std: float | None = None
+    novelty_tv: float | None = None
+    novelty_topk_mean: float | None = None
+
     midi_path: str = ""
     group: str = ""
     bars: int = 0
@@ -46,6 +68,20 @@ METRICS_COLUMNS: list[str] = [
     "lag_energy",
     "lag_best",
     "lag_min_lag",
+    "lag_e4",
+    "lag_e8",
+    "lag_hierarchy_index",
+    "lag_mult4_std",
+    "lag_base_period",
+    "lag_hierarchy_index_auto",
+    "lag_e_l0",
+    "lag_e_2l0",
+    "lag_hierarchy_mult",
+    "lag_hierarchy_lag_used",
+    "lag_hierarchy_auto_fallback",
+    "novelty_std",
+    "novelty_tv",
+    "novelty_topk_mean",
     "midi_path",
     "group",
     "bars",
@@ -63,11 +99,41 @@ def build_piece_metrics(
     midi_path: str = "",
     group: str = "",
     bars: int | None = None,
+    # New args
+    lag_e4: float | None = None,
+    lag_e8: float | None = None,
+    lag_hierarchy_index: float | None = None,
+    lag_mult4_std: float | None = None,
+    lag_base_period: int | None = None,
+    lag_hierarchy_index_auto: float | None = None,
+    lag_e_l0: float | None = None,
+    lag_e_2l0: float | None = None,
+    lag_hierarchy_mult: int | None = None,
+    lag_hierarchy_lag_used: int | None = None,
+    lag_hierarchy_auto_fallback: bool = False,
 ) -> PieceMetrics:
     """Construct a :class:`PieceMetrics` instance with sensible defaults."""
 
     resolved_bars = num_bars if bars is None else bars
     novelty_stats = novelty.stats if novelty else {}
+    
+    # Compute advanced novelty metrics
+    novelty_std = 0.0
+    novelty_tv = 0.0
+    novelty_topk_mean = 0.0
+    
+    if novelty and novelty.novelty:
+        vals = novelty.novelty
+        if len(vals) > 1:
+            novelty_std = float(statistics.stdev(vals))
+            # TV: mean(|n[i]-n[i-1]|)
+            diffs = [abs(vals[i] - vals[i - 1]) for i in range(1, len(vals))]
+            novelty_tv = float(statistics.fmean(diffs)) if diffs else 0.0
+            
+        vals_sorted = sorted(vals, reverse=True)
+        top_k = vals_sorted[:5]
+        novelty_topk_mean = float(statistics.fmean(top_k)) if top_k else 0.0
+    
     return PieceMetrics(
         piece_id=piece_id,
         num_bars=num_bars,
@@ -80,6 +146,24 @@ def build_piece_metrics(
         lag_energy=float(lag_energy),
         lag_best=best_lag,
         lag_min_lag=lag_min_lag,
+        
+        lag_e4=lag_e4,
+        lag_e8=lag_e8,
+        lag_hierarchy_index=lag_hierarchy_index,
+        lag_mult4_std=lag_mult4_std,
+        
+        lag_base_period=lag_base_period,
+        lag_hierarchy_index_auto=lag_hierarchy_index_auto,
+        lag_e_l0=lag_e_l0,
+        lag_e_2l0=lag_e_2l0,
+        lag_hierarchy_mult=lag_hierarchy_mult,
+        lag_hierarchy_lag_used=lag_hierarchy_lag_used,
+        lag_hierarchy_auto_fallback=lag_hierarchy_auto_fallback,
+        
+        novelty_std=novelty_std if novelty else 0.0,
+        novelty_tv=novelty_tv if novelty else 0.0,
+        novelty_topk_mean=novelty_topk_mean if novelty else 0.0,
+        
         midi_path=midi_path,
         group=group,
         bars=resolved_bars,
