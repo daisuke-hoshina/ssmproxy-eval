@@ -21,6 +21,10 @@ def eval(
     ),
     lag_top_k: Optional[int] = typer.Option(None, help="Number of lag energies to aggregate."),
     lag_min_lag: Optional[int] = typer.Option(None, "--lag-min-lag", help="Minimum lag to consider."),
+    lag_max_lag: Optional[int] = typer.Option(None, "--lag-max-lag", help="Maximum lag to consider."),
+    lag_min_support: Optional[int] = typer.Option(
+        None, "--lag-min-support", help="Minimum support (diagonal length) for lag energy calculation."
+    ),
     exclude_drums: Optional[bool] = typer.Option(
         None,
         "--exclude-drums/--include-drums",
@@ -29,6 +33,14 @@ def eval(
     ),
     config_path: Optional[Path] = typer.Option(
         None, "--config", "-c", resolve_path=True, help="Optional path to a configuration file."
+    ),
+    require_4_4: Optional[bool] = typer.Option(
+        None,
+        "--require-4-4/--allow-non-4-4",
+        help="Only process pieces with 4/4 time signature throughout.",
+    ),
+    max_bars: Optional[int] = typer.Option(
+        None, "--max-bars", help="Limit analysis to the first N bars."
     ),
 ) -> None:
     """Run evaluations for the given directory."""
@@ -43,7 +55,16 @@ def eval(
         novelty_L=novelty_L or defaults["novelty_L"],
         lag_top_k=lag_top_k or defaults["lag_top_k"],
         lag_min_lag=lag_min_lag or defaults["lag_min_lag"],
+        lag_max_lag=lag_max_lag or defaults["lag_max_lag"],
+        lag_min_support=lag_min_support or defaults["lag_min_support"],
         exclude_drums=defaults["exclude_drums"] if exclude_drums is None else exclude_drums,
+        ssm_weight_pch=defaults["ssm_weight_pch"],
+        ssm_weight_onh=defaults["ssm_weight_onh"],
+        ssm_map_to_unit_interval=defaults["ssm_map_to_unit_interval"],
+        novelty_peak_prominence=defaults["novelty_peak_prominence"],
+        novelty_peak_min_distance=defaults["novelty_peak_min_distance"],
+        require_4_4=defaults["require_4_4"] if require_4_4 is None else require_4_4,
+        max_bars=max_bars if max_bars is not None else defaults["max_bars"],
     )
     result_dir = run_evaluation(config)
     typer.echo(f"Saved evaluation artifacts to {result_dir}")
@@ -110,9 +131,100 @@ def report_run(
     typer.echo(f"Group stats: {artifacts['group_stats']}")
 
 
+
+dataset_app = typer.Typer(help="Commands for dataset management (scan, collect, sample).")
+
+
+@dataset_app.command("scan")
+def dataset_scan(
+    input_dir: Path = typer.Option(..., "--input-dir", "-i", exists=True, file_okay=False, resolve_path=True),
+    out_csv: Path = typer.Option(..., "--out-csv", "-o", resolve_path=True),
+    min_bars: int = typer.Option(128, "--min-bars", help="Minimum number of bars to keep."),
+    require_4_4: bool = typer.Option(
+        False, "--require-4-4/--allow-non-4-4", help="Require piece to be entirely 4/4."
+    ),
+    unknown_ts_is_4_4: bool = typer.Option(
+        True, "--unknown-ts-is-4-4/--unknown-ts-is-not-4-4", help="Treat unknown TS as 4/4."
+    ),
+    exclude_drums: bool = typer.Option(
+        True, "--exclude-drums/--include-drums", help="Exclude drum tracks from bar estimation."
+    ),
+    max_files: Optional[int] = typer.Option(None, "--max-files", help="Limit number of files scanned (debug)."),
+    seed: Optional[int] = typer.Option(None, "--seed", help="Random seed for file order."),
+    write_all: bool = typer.Option(
+        False, "--write-all", help="Write all files to CSV with selection status."
+    ),
+) -> None:
+    """Scan a directory of MIDI files and extract metadata to CSV."""
+    from .dataset_utils import scan_dataset
+
+    scan_dataset(
+        input_dir=input_dir,
+        out_csv=out_csv,
+        min_bars=min_bars,
+        require_4_4=require_4_4,
+        unknown_ts_is_4_4=unknown_ts_is_4_4,
+        exclude_drums=exclude_drums,
+        max_files=max_files,
+        seed=seed,
+        write_all=write_all,
+    )
+
+
+@dataset_app.command("collect")
+def dataset_collect(
+    in_csv: Path = typer.Option(..., "--in-csv", "-i", exists=True, dir_okay=False, resolve_path=True),
+    out_dir: Path = typer.Option(..., "--out-dir", "-o", resolve_path=True),
+    mode: str = typer.Option("symlink", "--mode", help="Copy mode: 'symlink' or 'copy'."),
+    flatten: bool = typer.Option(
+        False, "--flatten/--preserve-tree", help="Flatten structure or preserve relative paths."
+    ),
+    name_from: str = typer.Option("rel", "--name-from", help="Naming strategy if flattened: 'rel' or 'hash'."),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Simulate without copying."),
+    only_selected: bool = typer.Option(True, "--only-selected/--all-rows", help="Process only selected rows."),
+    limit: Optional[int] = typer.Option(None, "--limit", help="Limit number of files collected."),
+) -> None:
+    """Collect MIDI files from a scan CSV to a target directory."""
+    from .dataset_utils import collect_dataset
+
+    collect_dataset(
+        in_csv=in_csv,
+        out_dir=out_dir,
+        mode=mode,
+        flatten=flatten,
+        name_from=name_from,
+        dry_run=dry_run,
+        only_selected=only_selected,
+        limit=limit,
+    )
+
+
+@dataset_app.command("sample")
+def dataset_sample(
+    in_csv: Path = typer.Option(..., "--in-csv", "-i", exists=True, dir_okay=False, resolve_path=True),
+    out_csv: Path = typer.Option(..., "--out-csv", "-o", resolve_path=True),
+    n: int = typer.Option(..., "--n", "-n", help="Number of samples."),
+    seed: int = typer.Option(0, "--seed", help="Random seed."),
+    only_selected: bool = typer.Option(True, "--only-selected/--all-rows", help="Sample from only selected rows."),
+    shuffle: bool = typer.Option(True, "--shuffle/--no-shuffle", help="Shuffle output order."),
+) -> None:
+    """Sample a random subset of rows from the CSV."""
+    from .dataset_utils import sample_dataset
+
+    sample_dataset(
+        in_csv=in_csv,
+        out_csv=out_csv,
+        n=n,
+        seed=seed,
+        only_selected=only_selected,
+        shuffle_output=shuffle,
+    )
+
+
 app.add_typer(toy_app, name="toy")
 app.add_typer(pc_app, name="pc")
 app.add_typer(report_app, name="report")
+app.add_typer(dataset_app, name="dataset")
 
 
 if __name__ == "__main__":

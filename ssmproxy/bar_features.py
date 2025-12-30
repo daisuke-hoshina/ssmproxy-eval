@@ -23,7 +23,11 @@ def _allocate_bar_arrays(num_bars: int) -> Tuple[List[List[float]], List[List[fl
 
 
 def compute_bar_features(
-    midi: pretty_midi.PrettyMIDI, piece_id: Optional[str] = None, *, exclude_drums: bool = True
+    midi: pretty_midi.PrettyMIDI,
+    piece_id: Optional[str] = None,
+    *,
+    exclude_drums: bool = True,
+    max_bars: Optional[int] = None,
 ) -> tuple[str, List[List[float]], List[List[float]]]:
     """Compute bar-wise pitch class and onset histograms.
 
@@ -53,6 +57,8 @@ def compute_bar_features(
     last_start = max(event[0] for event in note_on_events)
     last_beat_index = int(math.floor(last_start / seconds_per_beat))
     num_bars = last_beat_index // BEATS_PER_BAR + 1
+    if max_bars is not None:
+        num_bars = min(num_bars, max_bars)
 
     pch, onh = _allocate_bar_arrays(num_bars)
 
@@ -60,13 +66,11 @@ def compute_bar_features(
         beat_float = start / seconds_per_beat
         beat_index = int(math.floor(beat_float))
         bar_index = beat_index // BEATS_PER_BAR
+        if bar_index >= num_bars:
+            continue
 
         if bar_index >= num_bars:
-            # Expand arrays if calculation underestimated number of bars.
-            extra_pch, extra_onh = _allocate_bar_arrays(bar_index - num_bars + 1)
-            pch.extend(extra_pch)
-            onh.extend(extra_onh)
-            num_bars = len(pch)
+            continue
 
         pitch_class = pitch % 12
         pch[bar_index][pitch_class] += 1.0
@@ -90,9 +94,12 @@ def compute_bar_features(
 
 
 def compute_bar_features_from_path(
-    path: str | bytes | "PathLike[str]", *, exclude_drums: bool = True
+    path: str | bytes | "PathLike[str]",
+    *,
+    exclude_drums: bool = True,
+    max_bars: Optional[int] = None,
 ) -> tuple[str, List[List[float]], List[List[float]]]:
     """Load a MIDI file and compute bar features."""
 
     piece_id, midi = load_midi(path)
-    return compute_bar_features(midi, piece_id, exclude_drums=exclude_drums)
+    return compute_bar_features(midi, piece_id, exclude_drums=exclude_drums, max_bars=max_bars)

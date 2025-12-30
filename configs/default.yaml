@@ -5,10 +5,21 @@ logging:
 evaluation:
   input_dir: ./data/eval
   output_dir: ./outputs
+  require_4_4: false
+  max_bars: null
   novelty_L: 8
   lag:
     top_k: 2
     min_lag: 4
+    max_lag: null
+    min_support: null
+  ssm:
+    weight_pch: 0.7
+    weight_onh: 0.3
+    map_to_unit_interval: false
+  novelty_peaks:
+    prominence: 0.10
+    min_distance: null
 features:
   exclude_drums: true
 pc:

@@ -45,7 +45,9 @@ def _build_checkerboard_kernel(L: int) -> list[list[float]]:
     return kernel
 
 
-def compute_novelty(ssm: Sequence[Sequence[float]], L: int) -> NoveltyResult:
+def compute_novelty(
+    ssm: Sequence[Sequence[float]], L: int, *, prominence: float = 0.10, min_distance: int | None = None
+) -> NoveltyResult:
     """Compute a novelty curve and summary statistics from a self-similarity matrix.
 
     The novelty is computed by sliding a Foote checkerboard kernel of half-size
@@ -56,7 +58,10 @@ def compute_novelty(ssm: Sequence[Sequence[float]], L: int) -> NoveltyResult:
 
     Args:
         ssm: Square self-similarity matrix.
+        ssm: Square self-similarity matrix.
         L: Half-size of the Foote kernel.
+        prominence: Peak detection prominence threshold.
+        min_distance: Minimum distance between peaks. If None, defaults to L.
 
     Returns:
         A ``NoveltyResult`` holding the normalized novelty curve, detected peak
@@ -89,7 +94,8 @@ def compute_novelty(ssm: Sequence[Sequence[float]], L: int) -> NoveltyResult:
         else:
             normalized_novelty = [0.0 for _ in novelty]
 
-    peaks = _find_peaks(normalized_novelty, min_distance=L, prominence=0.10)
+    peak_dist = min_distance if min_distance is not None else L
+    peaks = _find_peaks(normalized_novelty, min_distance=peak_dist, prominence=prominence)
     prominences = [_peak_prominence(normalized_novelty, idx) for idx in peaks]
     intervals = [peaks[i + 1] - peaks[i] for i in range(len(peaks) - 1)]
 
