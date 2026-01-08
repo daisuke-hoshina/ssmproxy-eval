@@ -12,7 +12,7 @@ import pretty_midi
 
 BPM = 120.0
 BEATS_PER_BAR = 4
-BARS_PER_PIECE = 32
+DEFAULT_BARS_PER_PIECE = 96
 SECONDS_PER_BEAT = 60.0 / BPM
 
 
@@ -24,7 +24,7 @@ class ToyPiece:
     seed: int
     midi: pretty_midi.PrettyMIDI
     relative_path: str = ""
-    bars: int = BARS_PER_PIECE
+    bars: int = DEFAULT_BARS_PER_PIECE
     bpm: float = BPM
 
 
@@ -96,78 +96,211 @@ def _mutate_phrase(template: Sequence[BarTemplate], rng: random.Random, change_p
     return mutated
 
 
-def _generate_repeat(rng: random.Random) -> pretty_midi.PrettyMIDI:
+def _generate_repeat(rng: random.Random, bars: int) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
     phrase = _build_phrase_template(rng, bars=4, base_pitch=60, pattern="repeat")
-    for repeat in range(0, BARS_PER_PIECE, 4):
+    for repeat in range(0, bars, 4):
         _write_phrase(instrument, phrase, repeat)
     midi.instruments.append(instrument)
     return midi
 
 
-def _generate_random(rng: random.Random) -> pretty_midi.PrettyMIDI:
+def _generate_random(rng: random.Random, bars: int) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    for bar in range(BARS_PER_PIECE):
+    for bar in range(bars):
         base_pitch = rng.choice([55, 58, 60, 62, 65, 67, 69])
         _write_phrase(instrument, [_build_bar_template(rng, base_pitch, pattern="random")], bar)
     midi.instruments.append(instrument)
     return midi
 
 
-def _generate_aaba(rng: random.Random) -> pretty_midi.PrettyMIDI:
+def _generate_aaba(rng: random.Random, bars: int) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    phrase_a = _build_phrase_template(rng, bars=8, base_pitch=60, pattern="AABA")
-    phrase_b = _build_phrase_template(rng, bars=8, base_pitch=67, pattern="AABA")
-    sections = [phrase_a, phrase_a, phrase_b, phrase_a]
-    for idx, phrase in enumerate(sections):
-        _write_phrase(instrument, phrase, idx * 8)
+    
+    # bars = 3 blocks of 32 bars (default)
+    num_blocks = max(1, bars // 32)
+    block_pitch_offsets = [0, 3, 7, 0, 3, 7] # offsets for blocks
+
+    for b in range(num_blocks):
+        offset = block_pitch_offsets[b % len(block_pitch_offsets)]
+        # Regenerate phrases for each block for variation
+        phrase_a = _build_phrase_template(rng, bars=8, base_pitch=60 + offset, pattern="AABA")
+        phrase_b = _build_phrase_template(rng, bars=8, base_pitch=67 + offset, pattern="AABA")
+        
+        sections = [phrase_a, phrase_a, phrase_b, phrase_a]
+        block_start_bar = b * 32
+        
+        for idx, phrase in enumerate(sections):
+            _write_phrase(instrument, phrase, block_start_bar + idx * 8)
+            
     midi.instruments.append(instrument)
     return midi
 
 
-def _generate_abab(rng: random.Random) -> pretty_midi.PrettyMIDI:
+def _generate_abab(rng: random.Random, bars: int) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    instrument = pretty_midi.Instrument(program=0)
-    phrase_a = _build_phrase_template(rng, bars=8, base_pitch=62, pattern="ABAB")
-    phrase_b = _build_phrase_template(rng, bars=8, base_pitch=69, pattern="ABAB")
-    sections = [phrase_a, phrase_b, phrase_a, phrase_b]
-    for idx, phrase in enumerate(sections):
-        _write_phrase(instrument, phrase, idx * 8)
+    
+    num_blocks = max(1, bars // 32)
+    block_pitch_offsets = [0, 3, 7, 0, 3, 7]
+
+    for b in range(num_blocks):
+        offset = block_pitch_offsets[b % len(block_pitch_offsets)]
+        phrase_a = _build_phrase_template(rng, bars=8, base_pitch=62 + offset, pattern="ABAB")
+        phrase_b = _build_phrase_template(rng, bars=8, base_pitch=69 + offset, pattern="ABAB")
+        
+        sections = [phrase_a, phrase_b, phrase_a, phrase_b]
+        block_start_bar = b * 32
+
+        for idx, phrase in enumerate(sections):
+            _write_phrase(instrument, phrase, block_start_bar + idx * 8)
+            
     midi.instruments.append(instrument)
     return midi
 
 
-def _generate_partial_copy(rng: random.Random) -> pretty_midi.PrettyMIDI:
+def _generate_partial_copy(rng: random.Random, bars: int) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    instrument = pretty_midi.Instrument(program=0)
-    base_phrase = _build_phrase_template(rng, bars=8, base_pitch=64, pattern="partial_copy")
-    altered = _mutate_phrase(base_phrase, rng, change_prob=0.35)
-    sections = [base_phrase, altered, base_phrase, altered]
-    for idx, phrase in enumerate(sections):
-        _write_phrase(instrument, phrase, idx * 8)
+    
+    num_blocks = max(1, bars // 32)
+    
+    for b in range(num_blocks):
+        # Regenerate base phrase for each block
+        base_phrase = _build_phrase_template(rng, bars=8, base_pitch=64, pattern="partial_copy")
+        altered = _mutate_phrase(base_phrase, rng, change_prob=0.35)
+        sections = [base_phrase, altered, base_phrase, altered]
+        
+        block_start_bar = b * 32
+        for idx, phrase in enumerate(sections):
+            _write_phrase(instrument, phrase, block_start_bar + idx * 8)
+            
     midi.instruments.append(instrument)
     return midi
 
 
-def _generate_hierarchical(rng: random.Random) -> pretty_midi.PrettyMIDI:
+def _generate_hierarchical(rng: random.Random, bars: int) -> pretty_midi.PrettyMIDI:
     midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
+    
+    # Hierarchy:
+    # Piece (bars) -> Section (32) -> Phrase (8) -> Motif (2)
+    
+    # Calculate sections based on total bars
+    num_sections = max(1, bars // 32)
+    # Each section has 4 phrases
+    phrases_per_section = 4
+    # Each phrase has 4 motifs (2 bars each)
+    
+    for s_idx in range(num_sections):
+        section_pitch_shift = rng.choice([0, 3, 7]) if s_idx > 0 else 0
+        
+        for p_idx in range(phrases_per_section):
+            # Phrase level variation
+            phrase_pitch_shift = rng.choice([0, 2, 5]) if p_idx % 2 != 0 else 0
+            
+            # Build phrase from motif
+            # Motif is 2 bars
+            motif = _build_phrase_template(rng, bars=2, base_pitch=60 + section_pitch_shift + phrase_pitch_shift, pattern="hierarchical")
+            
+            # Phrase is 8 bars (motif repeated 4 times with micro variations?)
+            # Existing logic: "phrase(8): motifを4回。2回目以降は軽いpitch shift"
+            phrase_bars: list[BarTemplate] = []
+            for m_idx in range(4):
+                motif_shift = rng.choice([0, 2]) if m_idx > 0 else 0
+                shifted_motif: list[BarTemplate] = []
+                for bar in motif:
+                    shifted_motif.append([(beat, dur, pitch + motif_shift) for beat, dur, pitch in bar])
+                phrase_bars.extend(shifted_motif)
+            
+            # Write phrase
+            # absolute bar index
+            abs_phrase_idx = (s_idx * phrases_per_section) + p_idx
+            start_bar = abs_phrase_idx * 8
+            _write_phrase(instrument, phrase_bars, start_bar)
+
+    midi.instruments.append(instrument)
+    return midi
+
+
+def _mutate_notes_stochastic(template: list[BarTemplate], rng: random.Random) -> list[BarTemplate]:
+    """Apply stochastic mutations to a phrase template."""
+    new_tmpl = []
+    for bar in template:
+        new_bar = []
+        # sort bar by onset to keep order reasonable, though not strictly required
+        for onset, dur, pitch in sorted(bar):
+            # Note deletion (prob 0.1)
+            if rng.random() < 0.1: 
+                continue
+                
+            p = pitch
+            o = onset
+            d = dur
+            
+            # Pitch variation (prob 0.2) -> small shift
+            if rng.random() < 0.2:
+                p += rng.choice([-2, -1, 1, 2])
+            
+            # Onset shift (prob 0.2) -> shift by 16th note
+            if rng.random() < 0.2:
+                shift = rng.choice([-0.25, 0.25])
+                # clamp to bar
+                o = max(0.0, min(3.75, o + shift))
+                
+            new_bar.append((o, d, int(p)))
+            
+        # Note addition (prob 0.2 per bar)
+        if rng.random() < 0.2:
+             # Add a random note on grid
+             grid = [0.0, 1.0, 2.0, 3.0, 0.5, 1.5, 2.5, 3.5]
+             new_bar.append((rng.choice(grid), 0.25, int(template[0][0][2]) if template and template[0] else 60))
+             
+        new_tmpl.append(new_bar)
+    return new_tmpl
+
+
+def _generate_hierarchical_v2(rng: random.Random, bars: int) -> pretty_midi.PrettyMIDI:
+    midi = pretty_midi.PrettyMIDI(initial_tempo=BPM)
     instrument = pretty_midi.Instrument(program=0)
-    motif = _build_phrase_template(rng, bars=2, base_pitch=60, pattern="hierarchical")
-    phrase: list[BarTemplate] = []
+    
+    # 1. Generate Base Section (32 bars) -> 4 distinct Phrases (A, B, C, D)
+    # To ensure distinctness, use different base pitches and rhythm patterns
+    phrases = [] 
+    base_params = [
+        (60, "hierarchical"), 
+        (67, "random"),       # Different rhythm
+        (55, "hierarchical"), 
+        (72, "random")
+    ]
+    
     for i in range(4):
-        shift = rng.choice([0, 2, 5]) if i % 2 else 0
-        shifted: list[BarTemplate] = []
-        for bar in motif:
-            shifted.append([(beat, dur, pitch + shift) for beat, dur, pitch in bar])
-        phrase.extend(shifted)
-    for idx in range(0, BARS_PER_PIECE, len(phrase)):
-        _write_phrase(instrument, phrase, idx)
+        bp, pat = base_params[i]
+        # Generate 2-bar Motif
+        # Make sure motif is interesting enough to be distinct
+        motif = _build_phrase_template(rng, bars=2, base_pitch=bp, pattern=pat)
+        
+        # Build 8-bar phrase from motif (repeat 4 times)
+        phrase_8 = []
+        for _ in range(4):
+             phrase_8.extend(motif)
+        phrases.append(phrase_8)
+        
+    # 2. Fill the piece by repeating the section [A, B, C, D] with variation
+    current_bar = 0
+    while current_bar < bars:
+        for phrase_tmpl in phrases:
+            if current_bar >= bars: 
+                break
+            
+            # Apply variation to this phrase instance
+            mutated_phrase = _mutate_notes_stochastic(phrase_tmpl, rng)
+            _write_phrase(instrument, mutated_phrase, current_bar)
+            current_bar += 8
+            
     midi.instruments.append(instrument)
     return midi
 
@@ -179,14 +312,15 @@ _GENERATORS = {
     "ABAB": _generate_abab,
     "partial_copy": _generate_partial_copy,
     "hierarchical": _generate_hierarchical,
+    "hierarchical_v2": _generate_hierarchical_v2,
 }
 
 
-def generate_piece(pattern: str, variant: int, seed: int) -> ToyPiece:
+def generate_piece(pattern: str, variant: int, seed: int, bars: int = DEFAULT_BARS_PER_PIECE) -> ToyPiece:
     if pattern not in _GENERATORS:
         raise ValueError(f"Unknown pattern: {pattern}")
     rng = random.Random(seed)
-    midi = _GENERATORS[pattern](rng)
+    midi = _GENERATORS[pattern](rng, bars)
     piece_id = f"{pattern}_{variant:03d}"
     return ToyPiece(
         piece_id=piece_id,
@@ -194,7 +328,7 @@ def generate_piece(pattern: str, variant: int, seed: int) -> ToyPiece:
         variant=variant,
         seed=seed,
         midi=midi,
-        bars=BARS_PER_PIECE,
+        bars=bars,
         bpm=BPM,
     )
 
@@ -218,7 +352,7 @@ def save_manifest(rows: Iterable[ToyPiece], manifest_path: Path) -> None:
             )
 
 
-def generate_corpus(output_dir: Path, variants: int = 1, seed: int = 0, flat: bool = False) -> list[ToyPiece]:
+def generate_corpus(output_dir: Path, variants: int = 1, seed: int = 0, flat: bool = False, bars: int = DEFAULT_BARS_PER_PIECE) -> list[ToyPiece]:
     output_dir.mkdir(parents=True, exist_ok=True)
     rng = random.Random(seed)
     pieces: list[ToyPiece] = []
@@ -226,7 +360,7 @@ def generate_corpus(output_dir: Path, variants: int = 1, seed: int = 0, flat: bo
     for pattern in patterns:
         for variant in range(variants):
             piece_seed = rng.randint(0, 1_000_000)
-            piece = generate_piece(pattern, variant, piece_seed)
+            piece = generate_piece(pattern, variant, piece_seed, bars=bars)
 
             if flat:
                 filename = f"{piece.piece_id}.mid"

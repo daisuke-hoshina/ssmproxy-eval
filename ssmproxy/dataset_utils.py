@@ -10,45 +10,25 @@ from typing import List, Optional
 
 import pretty_midi
 
-BEATS_PER_BAR = 4
-STEPS_PER_BAR = 16
-STEPS_PER_BEAT = STEPS_PER_BAR // BEATS_PER_BAR
+from .bar_features import get_beat_times, time_to_beat_index, time_to_beat_index_end, BEATS_PER_BAR
+from .midi_io import extract_note_events
 
 
-def _compute_bars_fast(midi: pretty_midi.PrettyMIDI) -> int:
-    """Compute number of bars using the same logic as bar_features.compute_bar_features.
+def _compute_bars_fast(midi: pretty_midi.PrettyMIDI, exclude_drums: bool = True, analysis_beats_per_bar: int = 4) -> int:
+    """Compute number of bars using beat-grid logic."""
+    notes = extract_note_events(midi, exclude_drums=exclude_drums)
     
-    Logic:
-    - Use only the initial tempo (or 120 if invalid).
-    - Find the last note-on event time.
-    - Calculate last beat index.
-    - num_bars = last_beat_index // 4 + 1
-    """
-    tempos_times, tempos = midi.get_tempo_changes()
-    tempo = float(tempos[0]) if len(tempos) else 120.0
-    if tempo <= 0:
-        tempo = 120.0
-
-    seconds_per_beat = 60.0 / tempo
+    if not notes:
+        return 0
+        
+    # Must match compute_bar_features logic exactly
+    last_end = max(n[1] for n in notes)
+    beats = get_beat_times(midi, target_end_time=last_end)
     
-    # pretty_midi.PrettyMIDI.instruments is a list of Instrument objects
-    # We aggregate all note starts from non-drum instruments (usually we exclude drums)
-    # But wait, logic in bar_features says:
-    # note_on_events = extract_note_on_events(midi, exclude_drums=exclude_drums)
-    # Let's inspect bar_features logic in memory... 
-    # It uses extract_note_on_events. To avoid circular dependency or code duplication, 
-    # we can try to be consistent. 
-    # Since this function is for 'scan', and performance is key, we can do a quick gathering.
-    # However, strict consistency is required.
-    
-    # Let's do a lightweight version of extract_note_on_events logic here
-    # assuming we want to exclude drums by default or generally follow the rule.
-    # The user requirement says: "scanは高速化のため、bar_features のロジック...を再実装しても良い"
-    # "exclude_drums / --include-drums (default: True)" in scan command.
-    
-    # We will pass exclude_drums as arg to this internal function if needed, 
-    # but for now let's assume we implement the logic here.
-    pass
+    # Use end-exclusive logic matching compute_bar_features
+    last_beat_idx = time_to_beat_index_end(last_end, beats)
+    num_bars = (last_beat_idx // analysis_beats_per_bar) + 1
+    return num_bars
 
 def scan_dataset(
     input_dir: Path,
@@ -60,6 +40,7 @@ def scan_dataset(
     max_files: Optional[int] = None,
     seed: Optional[int] = None,
     write_all: bool = False,
+    analysis_beats_per_bar: int = 4,
 ) -> None:
     """Scan a directory for MIDI files and write metadata to a CSV."""
     
@@ -110,29 +91,14 @@ def scan_dataset(
         else:
             is_selected_ts = True
 
-        # 2. Bar Estimate
-        # Re-implement bar logic locally for speed avoiding full feature extraction overhead
+        # 2. Bar Estimate & Tempo Check
         tempos_times, tempos = midi.get_tempo_changes()
-        tempo = float(tempos[0]) if len(tempos) > 0 else 120.0
-        if tempo <= 0:
-            tempo = 120.0
-        seconds_per_beat = 60.0 / tempo
-        
-        last_start = 0.0
-        has_notes = False
-        for instr in midi.instruments:
-            if exclude_drums and instr.is_drum:
-                continue
-            for note in instr.notes:
-                if note.start > last_start:
-                    last_start = note.start
-                has_notes = True
-        
-        if not has_notes:
-            num_bars = 0
+        if not len(tempos):
+            is_constant_tempo = True
         else:
-            last_beat_index = int(math.floor(last_start / seconds_per_beat))
-            num_bars = last_beat_index // BEATS_PER_BAR + 1
+            is_constant_tempo = (max(tempos) - min(tempos) < 1e-3)
+            
+        num_bars = _compute_bars_fast(midi, exclude_drums=exclude_drums, analysis_beats_per_bar=analysis_beats_per_bar)
             
         # 3. Min Bars filter
         if num_bars < min_bars:
@@ -148,12 +114,13 @@ def scan_dataset(
                 "midi_abs_path": str(fpath.resolve()),
                 "num_bars": num_bars,
                 "is_all_4_4": is_all_4_4_str,
+                "is_constant_tempo": is_constant_tempo,
                 "selected": final_selected,
                 "error": ""
             })
 
     # Write CSV
-    header = ["midi_rel_path", "midi_abs_path", "num_bars", "is_all_4_4", "selected", "error"]
+    header = ["midi_rel_path", "midi_abs_path", "num_bars", "is_all_4_4", "is_constant_tempo", "selected", "error"]
     with open(out_csv, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=header)
         writer.writeheader()

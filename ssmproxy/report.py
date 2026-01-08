@@ -43,7 +43,8 @@ def _write_csv(path: Path, fieldnames: Sequence[str], rows: Iterable[dict[str, o
         writer = csv.DictWriter(fp, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            writer.writerow({key: row.get(key, "") for key in fieldnames})
+            # explicit conversion of None to "" because csv defaults vary or might write "None"
+            writer.writerow({key: (row.get(key) if row.get(key) is not None else "") for key in fieldnames})
 
 
 def load_metrics(metrics_csv: Path) -> tuple[list[dict[str, str]], list[str]]:
@@ -170,14 +171,14 @@ def compute_group_stats(rows: list[dict[str, str]], group_col: str) -> tuple[lis
         entry: dict[str, object] = {group_col: group_value}
         for col, values in metrics.items():
             count = len(values)
-            mean = statistics.fmean(values) if values else 0.0
-            std = statistics.stdev(values) if len(values) > 1 else 0.0
-            median = statistics.median(values) if values else 0.0
+            mean = statistics.fmean(values) if values else None
+            std = statistics.stdev(values) if len(values) > 1 else None
+            median = statistics.median(values) if values else None
             entry[f"{col}_mean"] = mean
             entry[f"{col}_std"] = std
             entry[f"{col}_median"] = median
-            entry[f"{col}_q25"] = _quantile(values, 0.25)
-            entry[f"{col}_q75"] = _quantile(values, 0.75)
+            entry[f"{col}_q25"] = _quantile(values, 0.25) if values else None
+            entry[f"{col}_q75"] = _quantile(values, 0.75) if values else None
             entry[f"{col}_count"] = count
         result_rows.append(entry)
 
@@ -227,14 +228,19 @@ def plot_boxplots(rows: list[dict[str, str]], group_col: str, metric_names: list
         labels = sorted(grouped.keys())
         data = [grouped[label] for label in labels]
         
+        # Add counts to labels (User request)
+        plot_labels = [f"{label}\n(n={len(grouped[label])})" for label in labels]
+        
         fig, ax = plt.subplots(figsize=(6, 4))
-        ax.boxplot(data, labels=labels)
+        # Use tick_labels (new API) to fix warning and show counts
+        ax.boxplot(data, tick_labels=plot_labels)
         
         # Custom overlays
         # Check if we should use jitter points for this metric
         jitter_metrics = {
             "novelty_peak_rate", 
             "lag_hierarchy_index", 
+            "lag_hierarchy_index_auto",
             "novelty_tv", 
             "novelty_std"
         }
@@ -251,7 +257,7 @@ def plot_boxplots(rows: list[dict[str, str]], group_col: str, metric_names: list
         else:
             # Default mean overlay (e.g. for lag_energy)
             # Calculate means for overlay
-            means = [statistics.fmean(grouped[label]) if grouped[label] else 0.0 for label in labels]
+            means = [statistics.fmean(grouped[label]) if grouped[label] else float("nan") for label in labels]
             # Overlay means: x-positions are 1, 2, ..., len(labels)
             x_positions = range(1, len(labels) + 1)
             ax.scatter(x_positions, means, color='red', marker='o', s=30, label='Mean', zorder=3)
@@ -457,7 +463,7 @@ def plot_best_lag_distribution(
     fig, ax = plt.subplots(figsize=(6, 4))
     # Violin plot for detailed distribution or boxplot
     # Using boxplot as requested/consistent with others
-    ax.boxplot(data, labels=labels)
+    ax.boxplot(data, tick_labels=labels)
     ax.set_title(f"Best Lag Distribution by {group_col}")
     ax.set_ylabel("Best Lag Index")
     ax.set_xlabel(group_col)
@@ -665,21 +671,13 @@ def generate_report(
     )
     
     # Advanced metrics plots
-    # Boxplot + Jitter for lag_hierarchy_index and novelty_tv (and optionally novelty_std)
-    adv_metrics = ["lag_hierarchy_index", "lag_hierarchy_index_auto", "novelty_tv", "novelty_std"]
+    # Boxplot + Jitter for lag_hierarchy_index_auto and novelty_tv (and optionally novelty_std)
+    # Removing 'lag_hierarchy_index' (legacy) from plots as requested, but keeping in CSV.
+    adv_metrics = ["lag_hierarchy_index_auto", "novelty_tv", "novelty_std"]
     # Filter only available metrics
     adv_metrics = [m for m in adv_metrics if m in joined_columns]
     plot_boxplots(metrics_joined, group_col, adv_metrics, figures_dir)
-    
-    # Scatter plot: x=lag_hierarchy_index, y=novelty_tv
-    plot_scatter(
-        metrics_joined,
-        group_col,
-        ["lag_hierarchy_index"],
-        ["novelty_tv"],
-        figures_dir,
-        filename="lag_hierarchy_index_vs_novelty_tv.png",
-    )
+
     
     # Scatter plot: x=lag_hierarchy_index_auto, y=novelty_tv
     plot_scatter(

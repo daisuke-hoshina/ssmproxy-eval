@@ -65,7 +65,9 @@ def test_extract_note_on_events_can_exclude_drums():
 
 def test_compute_bar_features_bins_and_normalization():
     midi = _make_synthetic_midi()
-    piece_id, pch, onh = compute_bar_features(midi, piece_id="synthetic")
+    piece_id, features = compute_bar_features(midi, piece_id="synthetic")
+    pch = features["pch"]
+    onh = features["onh"]
 
     assert piece_id == "synthetic"
     assert len(pch) == 2
@@ -95,12 +97,18 @@ def test_compute_bar_features_bins_and_normalization():
 def test_compute_bar_features_handles_drum_only_tracks():
     midi = _make_drum_heavy_midi(include_melody=False)
 
-    piece_id, pch_excluded, onh_excluded = compute_bar_features(midi, piece_id="drums", exclude_drums=True)
+    piece_id, features_excluded = compute_bar_features(midi, piece_id="drums", exclude_drums=True)
+    pch_excluded = features_excluded.get("pch", [])
+    onh_excluded = features_excluded.get("onh", [])
+    
     assert piece_id == "drums"
     assert pch_excluded == []
     assert onh_excluded == []
 
-    piece_id, pch_included, onh_included = compute_bar_features(midi, piece_id="drums", exclude_drums=False)
+    piece_id, features_included = compute_bar_features(midi, piece_id="drums", exclude_drums=False)
+    pch_included = features_included["pch"]
+    onh_included = features_included["onh"]
+    
     assert len(pch_included) == 2
     assert len(onh_included) == 2
     assert math.isclose(sum(pch_included[0]) + sum(pch_included[1]), 2.0)
@@ -110,8 +118,13 @@ def test_compute_bar_features_handles_drum_only_tracks():
 def test_drum_exclusion_keeps_pch_and_onh_stable_with_melody():
     midi = _make_drum_heavy_midi(include_melody=True)
 
-    _, pch_excluded, onh_excluded = compute_bar_features(midi, piece_id="melody", exclude_drums=True)
-    _, pch_included, onh_included = compute_bar_features(midi, piece_id="melody", exclude_drums=False)
+    _, features_excluded = compute_bar_features(midi, piece_id="melody", exclude_drums=True)
+    pch_excluded = features_excluded["pch"]
+    onh_excluded = features_excluded["onh"]
+    
+    _, features_included = compute_bar_features(midi, piece_id="melody", exclude_drums=False)
+    pch_included = features_included["pch"]
+    onh_included = features_included["onh"]
 
     assert len(pch_excluded) == 1
     assert len(onh_excluded) == 1
