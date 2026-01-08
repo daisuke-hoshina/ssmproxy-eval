@@ -32,3 +32,20 @@ def extract_note_on_events(midi: pretty_midi.PrettyMIDI, *, exclude_drums: bool 
 
     note_ons.sort(key=lambda event: event[0])
     return note_ons
+
+
+NoteEvent = Tuple[float, float, int, int]
+
+
+def extract_note_events(midi: pretty_midi.PrettyMIDI, *, exclude_drums: bool = True) -> List[NoteEvent]:
+    """Return a sorted list of (start, end, pitch, velocity) tuples."""
+    notes: List[NoteEvent] = []
+    for instrument in midi.instruments:
+        if exclude_drums and instrument.is_drum:
+            continue
+
+        for note in instrument.notes:
+            notes.append((note.start, note.end, note.pitch, note.velocity))
+
+    notes.sort(key=lambda event: event[0])
+    return notes

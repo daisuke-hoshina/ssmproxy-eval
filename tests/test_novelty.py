@@ -23,7 +23,9 @@ def test_block_diagonal_peak_detection():
     # Expect a strong novelty response near the block boundary
     assert any(peak in (2, 3) for peak in result.peaks)
     assert len(result.peaks) >= 1
-    assert result.stats["peak_rate"] == pytest.approx(len(result.peaks) / len(ssm))
+    valid_len = max(0, len(ssm) - 2 * L)
+    assert result.stats["peak_rate"] == pytest.approx(len(result.peaks) / valid_len)
+    assert result.stats["peak_rate_raw"] == pytest.approx(len(result.peaks) / len(ssm))
     assert result.stats["prom_mean"] >= 0.10
     assert result.stats["prom_median"] >= 0.10
 

@@ -8,20 +8,47 @@ evaluation:
   require_4_4: false
   max_bars: null
   novelty_L: 8
+  novelty_multi_Ls: [4, 8, 16]
+
   lag:
     top_k: 2
     min_lag: 4
     max_lag: null
     min_support: null
+    # New robustness parameters
+    min_support_ratio: null
+    best_lag_mode: "mean"
+    best_lag_lcb_z: 1.0
+    l0_tau: 32.0
+    l0_min_hits: 2
+    hierarchy_auto_mode: slope_prom
+    hierarchy_auto_max_levels: 5
+    hierarchy_auto_harmonics: [1, 2, 4, 8]
+    hierarchy_auto_weights: [1.0, 0.8, 0.6, 0.5]
+    hierarchy_auto_prom_window: adaptive
   ssm:
-    weight_pch: 0.7
-    weight_onh: 0.3
+    weight_pch: 0.3
+    weight_onh: 0.1
+    weight_onh_bin: 0.1
+    weight_onh_count: 0.2
+    weight_chroma_roll: 0.4
+    weight_density: 0.0
     map_to_unit_interval: false
   novelty_peaks:
-    prominence: 0.10
-    min_distance: null
+    prominence: 0.15
+    min_distance: 6
+    # Consensus mode
+    mode: "integrated"
+    consensus_min_scales: 2
+    consensus_tolerance: 2
+    consensus_keep_if_in_lmax: true
+    consensus_fallback_to_integrated: true
 features:
   exclude_drums: true
+  quantize_mode: beat_grid
+  analysis_beats_per_bar: 4
+  steps_per_beat: 4
+  feature_mode: enhanced
 pc:
   enabled: false
   config_path: ./configs/pc.yaml

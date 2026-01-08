@@ -41,7 +41,11 @@ class PieceMetrics:
     lag_e_2l0: float | None = None
     lag_hierarchy_mult: int | None = None
     lag_hierarchy_lag_used: int | None = None
+    lag_hierarchy_mult: int | None = None
+    lag_hierarchy_lag_used: int | None = None
     lag_hierarchy_auto_fallback: bool = False
+    lag_hierarchy_index_auto_valid: int = 0
+    lag_hierarchy_index_auto_reason: str = ""
     
     # Advanced Novelty Metrics
     novelty_std: float | None = None
@@ -79,6 +83,8 @@ METRICS_COLUMNS: list[str] = [
     "lag_hierarchy_mult",
     "lag_hierarchy_lag_used",
     "lag_hierarchy_auto_fallback",
+    "lag_hierarchy_index_auto_valid",
+    "lag_hierarchy_index_auto_reason",
     "novelty_std",
     "novelty_tv",
     "novelty_topk_mean",
@@ -111,6 +117,8 @@ def build_piece_metrics(
     lag_hierarchy_mult: int | None = None,
     lag_hierarchy_lag_used: int | None = None,
     lag_hierarchy_auto_fallback: bool = False,
+    lag_hierarchy_index_auto_valid: int = 0,
+    lag_hierarchy_index_auto_reason: str = "",
 ) -> PieceMetrics:
     """Construct a :class:`PieceMetrics` instance with sensible defaults."""
 
@@ -124,13 +132,24 @@ def build_piece_metrics(
     
     if novelty and novelty.novelty:
         vals = novelty.novelty
-        if len(vals) > 1:
-            novelty_std = float(statistics.stdev(vals))
+        
+        # Determining valid range from stats (fallback to full if missing)
+        valid_start = int(novelty_stats.get("valid_start", 0))
+        valid_end = int(novelty_stats.get("valid_end", len(vals)))
+        
+        # Safety clamp
+        valid_start = max(0, min(valid_start, len(vals)))
+        valid_end = max(valid_start, min(valid_end, len(vals)))
+        
+        vals_valid = vals[valid_start:valid_end]
+        
+        if len(vals_valid) > 1:
+            novelty_std = float(statistics.stdev(vals_valid))
             # TV: mean(|n[i]-n[i-1]|)
-            diffs = [abs(vals[i] - vals[i - 1]) for i in range(1, len(vals))]
+            diffs = [abs(vals_valid[i] - vals_valid[i - 1]) for i in range(1, len(vals_valid))]
             novelty_tv = float(statistics.fmean(diffs)) if diffs else 0.0
             
-        vals_sorted = sorted(vals, reverse=True)
+        vals_sorted = sorted(vals_valid, reverse=True)
         top_k = vals_sorted[:5]
         novelty_topk_mean = float(statistics.fmean(top_k)) if top_k else 0.0
     
@@ -159,6 +178,8 @@ def build_piece_metrics(
         lag_hierarchy_mult=lag_hierarchy_mult,
         lag_hierarchy_lag_used=lag_hierarchy_lag_used,
         lag_hierarchy_auto_fallback=lag_hierarchy_auto_fallback,
+        lag_hierarchy_index_auto_valid=lag_hierarchy_index_auto_valid,
+        lag_hierarchy_index_auto_reason=lag_hierarchy_index_auto_reason,
         
         novelty_std=novelty_std if novelty else 0.0,
         novelty_tv=novelty_tv if novelty else 0.0,
