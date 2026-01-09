@@ -141,9 +141,14 @@ class RunConfig:
     lag_hierarchy_auto_prom_window: int | str = RUN_DEFAULTS["lag_hierarchy_auto_prom_window"]
     lag_best_lag_mode: str = RUN_DEFAULTS["lag_best_lag_mode"]
     lag_best_lag_lcb_z: float = RUN_DEFAULTS["lag_best_lag_lcb_z"]
+    lag_best_lag_tie_eps: float = RUN_DEFAULTS["lag_best_lag_tie_eps"]
     lag_min_support_ratio: float | None = RUN_DEFAULTS["lag_min_support_ratio"]
     lag_l0_tau: float = RUN_DEFAULTS["lag_l0_tau"]
     lag_l0_min_hits: int = RUN_DEFAULTS["lag_l0_min_hits"]
+    lag_l0_max_lag: int | None = RUN_DEFAULTS.get("l0_max_lag")
+    lag_l0_min_support: int | None = RUN_DEFAULTS.get("l0_min_support")
+    lag_l0_include_best_lag: bool = RUN_DEFAULTS.get("l0_include_best_lag", False)
+    lag_l0_tie_eps: float = RUN_DEFAULTS.get("l0_tie_eps", 1e-6)
     
     quantize_mode: str = RUN_DEFAULTS["quantize_mode"]
     analysis_beats_per_bar: int = RUN_DEFAULTS["analysis_beats_per_bar"]
@@ -317,7 +322,7 @@ def run_evaluation(config: RunConfig) -> Path:
                 ratio_support = ceil(config.lag_min_support_ratio * B)
                 min_support_effective = max(min_support_effective or 0, ratio_support)
                 
-            lag_energy, best_lag, lag_energies = compute_lag_energy(
+            lag_energy, best_lag, lag_energies, best_lag_details = compute_lag_energy(
                 ssm,
                 min_lag=config.lag_min_lag,
                 top_k=config.lag_top_k,
@@ -326,6 +331,7 @@ def run_evaluation(config: RunConfig) -> Path:
                 min_support=min_support_effective,
                 best_lag_mode=config.lag_best_lag_mode,
                 best_lag_lcb_z=config.lag_best_lag_lcb_z,
+                best_lag_tie_eps=config.lag_best_lag_tie_eps,
             )
             
             # Automated Hierarchy Index & Advanced Lag Metrics
@@ -335,7 +341,7 @@ def run_evaluation(config: RunConfig) -> Path:
                 window=config.lag_hierarchy_auto_prom_window
             )
     
-            lag_base_period, lag_hierarchy_auto_fallback = estimate_base_period_comb(
+            l0_est, l0_is_fallback, l0_details = estimate_base_period_comb(
                 lag_energies, 
                 prominence, 
                 min_lag=config.lag_min_lag,
@@ -343,7 +349,15 @@ def run_evaluation(config: RunConfig) -> Path:
                 weights=config.lag_hierarchy_auto_weights,
                 tau=config.lag_l0_tau,
                 min_hits=config.lag_l0_min_hits,
+                max_lag=config.lag_l0_max_lag,
+                min_support=config.lag_l0_min_support,
+                include_best_lag=config.lag_l0_include_best_lag,
+                best_lag=best_lag,
+                tie_eps=config.lag_l0_tie_eps,
             )
+            
+            # Use the robust result as lag_base_period
+            lag_base_period = l0_est
     
             # 1. Calculate Fixed Metrics (needed for fallback)
             lag_e4: float | None = None
@@ -354,6 +368,7 @@ def run_evaluation(config: RunConfig) -> Path:
             lag_hierarchy_index_auto: float | None = None
             lag_hierarchy_mult: int | None = None
             lag_hierarchy_lag_used: int | None = None
+            lag_hierarchy_auto_fallback: bool = False
             lag_hierarchy_index_auto_valid: int = 0
             lag_hierarchy_index_auto_reason: str = "no_lag_energies"
             lag_e_l0: float | None = None
@@ -454,7 +469,9 @@ def run_evaluation(config: RunConfig) -> Path:
                     group=group,
                     bars=len(pch),
                     
-                    lag_base_period=lag_base_period,
+                    lag_base_period=l0_est,
+                    lag_base_period_details=l0_details,
+                    lag_base_period_is_fallback=l0_is_fallback,
                     lag_hierarchy_index_auto=lag_hierarchy_index_auto,
                     lag_e_l0=lag_e_l0,
                     lag_e_2l0=lag_e_2l0,
@@ -467,6 +484,9 @@ def run_evaluation(config: RunConfig) -> Path:
                     lag_e8=lag_e8,
                     lag_hierarchy_index=lag_hierarchy_index,
                     lag_mult4_std=lag_mult4_std,
+                    
+                    # New Robustness Stats
+                    lag_best_details=best_lag_details,
                 )
             )
             counters["processed"] += 1

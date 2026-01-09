@@ -34,7 +34,7 @@ def test_l0_prefer_small_base_period():
     # We expect 16 to be chosen because of harmonics and small-lag preference
     
     try:
-        l0, is_fallback = estimate_base_period_comb(
+        l0, is_fallback, _ = estimate_base_period_comb(
             lag_energies,
             prom,
             min_lag=4,
@@ -76,7 +76,7 @@ def test_l0_penalty_works():
     # Even if 80 has higher raw score, penalty should crush it.
     
     try:
-        l0, _ = estimate_base_period_comb(
+        l0, _, _ = estimate_base_period_comb(
             lag_energies,
             prom,
             min_lag=4,
