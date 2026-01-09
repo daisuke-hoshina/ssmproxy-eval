@@ -16,9 +16,15 @@ evaluation:
     max_lag: null
     min_support: null
     # New robustness parameters
-    min_support_ratio: null
-    best_lag_mode: "mean"
+    min_support_ratio: 0.25
+    best_lag_mode: "lcb"
     best_lag_lcb_z: 1.0
+    best_lag_tie_eps: 1.0e-6
+    # L0 Estimation
+    l0_max_lag: null
+    l0_min_support: null
+    l0_include_best_lag: false
+    l0_tie_eps: 1.0e-6
     l0_tau: 32.0
     l0_min_hits: 2
     hierarchy_auto_mode: slope_prom

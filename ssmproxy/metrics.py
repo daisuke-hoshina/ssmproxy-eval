@@ -28,6 +28,12 @@ class PieceMetrics:
     lag_best: int | None
     lag_min_lag: int
     
+    # Best Lag Stats (Robustness)
+    lag_best_score: float | None = None
+    lag_best_mean: float | None = None
+    lag_best_stderr: float | None = None
+    lag_best_support: int | None = None
+    
     # Advanced Lag Metrics
     lag_e4: float | None = None
     lag_e8: float | None = None
@@ -36,6 +42,10 @@ class PieceMetrics:
     
     # Auto Hierarchy Metrics
     lag_base_period: int | None = None
+    lag_base_period_score: float | None = None
+    lag_base_period_is_fallback: bool = False
+    lag_base_period_num_candidates: int | None = None
+    
     lag_hierarchy_index_auto: float | None = None
     lag_e_l0: float | None = None
     lag_e_2l0: float | None = None
@@ -71,12 +81,20 @@ METRICS_COLUMNS: list[str] = [
     "novelty_interval_cv",
     "lag_energy",
     "lag_best",
+    "lag_best",
     "lag_min_lag",
+    "lag_best_score",
+    "lag_best_mean",
+    "lag_best_stderr",
+    "lag_best_support",
     "lag_e4",
     "lag_e8",
     "lag_hierarchy_index",
     "lag_mult4_std",
     "lag_base_period",
+    "lag_base_period_score",
+    "lag_base_period_is_fallback",
+    "lag_base_period_num_candidates",
     "lag_hierarchy_index_auto",
     "lag_e_l0",
     "lag_e_2l0",
@@ -106,11 +124,14 @@ def build_piece_metrics(
     group: str = "",
     bars: int | None = None,
     # New args
+    lag_best_details: dict | None = None,
     lag_e4: float | None = None,
     lag_e8: float | None = None,
     lag_hierarchy_index: float | None = None,
     lag_mult4_std: float | None = None,
     lag_base_period: int | None = None,
+    lag_base_period_details: dict | None = None,
+    lag_base_period_is_fallback: bool = False,
     lag_hierarchy_index_auto: float | None = None,
     lag_e_l0: float | None = None,
     lag_e_2l0: float | None = None,
@@ -166,12 +187,21 @@ def build_piece_metrics(
         lag_best=best_lag,
         lag_min_lag=lag_min_lag,
         
+        lag_best_score=lag_best_details.get("best_lag_score") if lag_best_details else None,
+        lag_best_mean=lag_best_details.get("best_lag_mean") if lag_best_details else None,
+        lag_best_stderr=lag_best_details.get("best_lag_stderr") if lag_best_details else None,
+        lag_best_support=lag_best_details.get("best_lag_support") if lag_best_details else None,
+        
         lag_e4=lag_e4,
         lag_e8=lag_e8,
         lag_hierarchy_index=lag_hierarchy_index,
         lag_mult4_std=lag_mult4_std,
         
         lag_base_period=lag_base_period,
+        lag_base_period_score=lag_base_period_details.get("score") if lag_base_period_details else None,
+        lag_base_period_is_fallback=lag_base_period_is_fallback,
+        lag_base_period_num_candidates=lag_base_period_details.get("candidates") if lag_base_period_details else None,
+        
         lag_hierarchy_index_auto=lag_hierarchy_index_auto,
         lag_e_l0=lag_e_l0,
         lag_e_2l0=lag_e_2l0,

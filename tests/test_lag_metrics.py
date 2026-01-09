@@ -40,7 +40,7 @@ class TestLagMetrics(unittest.TestCase):
         # Energy (dummy, not used for candidates if prominence peaks exist)
         energies = [0.1] * 50
         
-        l0, fallback = estimate_base_period_comb(energies, prom, min_lag=4)
+        l0, fallback, _ = estimate_base_period_comb(energies, prom, min_lag=4)
         
         # Should pick 8 because harmonics 1, 2, 4 align
         self.assertEqual(l0, 8)
@@ -54,7 +54,7 @@ class TestLagMetrics(unittest.TestCase):
         energies = [0.1] * 50
         energies[13] = 0.9 # Best energy
         
-        l0, fallback = estimate_base_period_comb(energies, prom, min_lag=4)
+        l0, fallback, _ = estimate_base_period_comb(energies, prom, min_lag=4, min_hits=1)
         
         # Harmonics [1,2,4,8] -> 13, 26, 52.. 
         # 13 has prom 0.8. 26 is 0. 
@@ -80,9 +80,9 @@ class TestLagMetrics(unittest.TestCase):
         
         # compute_lag_prominence will likely return 0s if perfectly flat or near flat.
         
-        l0, fallback = estimate_base_period_comb(energies, prom, min_lag=4)
+        l0, fallback, _ = estimate_base_period_comb(energies, prom, min_lag=4)
         
-        self.assertEqual(l0, 5) # Fallback to best energy
+        self.assertIsNone(l0) # New behavior: return None on failure
         self.assertTrue(fallback)
 
     def test_hierarchy_slope_hierarchical(self):

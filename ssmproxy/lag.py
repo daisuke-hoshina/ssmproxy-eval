@@ -1,7 +1,7 @@
 """Lag energy computation from self-similarity matrices."""
 from __future__ import annotations
 
-from typing import Iterable, List, Optional, Tuple
+from typing import Iterable, List, Optional, Tuple, Any, Dict
 
 
 def compute_lag_energy(
@@ -14,7 +14,8 @@ def compute_lag_energy(
     min_support: int | None = None,
     best_lag_mode: str = "mean",
     best_lag_lcb_z: float = 1.0,
-) -> Tuple[float, Optional[int], Optional[List[Optional[float]]]]:
+    best_lag_tie_eps: float = 1e-6,
+) -> Tuple[float, Optional[int], Optional[List[Optional[float]]], Dict[str, Any]]:
     """Compute lag energies from a self-similarity matrix.
 
     For each lag ``k`` such that ``min_lag <= k <= B - min_lag`` (``B`` is the
@@ -39,8 +40,8 @@ def compute_lag_energy(
         A tuple ``(energy_sum, best_lag, lag_energies)`` where ``energy_sum`` is
         the sum of the ``top_k`` highest lag energies, ``best_lag`` is the lag
         with the maximum energy (or ``None`` if no lags are valid), and
-        ``lag_energies`` is the list of lag energies when ``return_full`` is
-        ``True`` otherwise ``None``.
+        ``True`` otherwise ``None``. The fourth element is a dictionary of details
+        containing stats for the chosen best lag (score, mean, stderr, support).
     """
 
     if min_lag < 1:
@@ -71,7 +72,7 @@ def compute_lag_energy(
         # Prevent lag from exceeding B - min_support
         limit_lag = min(limit_lag, num_rows - min_support)
 
-    best_lag_scores: List[Tuple[int, float]] = []
+    best_lag_scores: List[Tuple[int, float, float, float, int]] = [] # lag, score, mean, stderr, n
 
     for lag in range(min_lag, limit_lag + 1):
         entries = [ssm[i][i + lag] for i in range(num_rows - lag)]
@@ -87,33 +88,56 @@ def compute_lag_energy(
         
         # Calculate score for best_lag selection
         score = mean_val
-        if best_lag_mode in ("lcb", "zscore"):
-            if n > 1:
-                variance = sum((x - mean_val) ** 2 for x in entries) / (n - 1)
-                std_dev = variance ** 0.5
-            else:
-                std_dev = 0.0
-                
-            std_err = std_dev / (n ** 0.5) if n > 0 else 0.0
+        std_dev = 0.0
+        std_err = 0.0
+        
+        if n > 1:
+            variance = sum((x - mean_val) ** 2 for x in entries) / (n - 1)
+            std_dev = variance ** 0.5
+            std_err = std_dev / (n ** 0.5)
             
-            if best_lag_mode == "lcb":
-                score = mean_val - best_lag_lcb_z * std_err
-            elif best_lag_mode == "zscore":
-                score = mean_val / (std_err + 1e-9)
+        if best_lag_mode == "lcb":
+            score = mean_val - best_lag_lcb_z * std_err
+        elif best_lag_mode == "zscore":
+            score = mean_val / (std_err + 1e-9)
                 
-        best_lag_scores.append((lag, score))
+        best_lag_scores.append((lag, score, mean_val, std_err, n))
 
     if not valid_energies:
-        return 0.0, None, lag_energies if return_full else None
+        return 0.0, None, lag_energies if return_full else None, {}
 
-    # Determine the lag with the highest SCORE (for best_lag).
-    best_lag, _ = max(best_lag_scores, key=lambda item: item[1])
+    # Determine the lag with the highest SCORE (for best_lag) with Tie-Breaking
+    if not best_lag_scores:
+        best_lag = None
+        details = {}
+    else:
+        # 1. Find max score
+        max_score = max(x[1] for x in best_lag_scores)
+        
+        # 2. Collect candidates within epsilon
+        # If best_lag_tie_eps is relative, we might need logic, but standard acts as absolute here
+        # or we follow request: "score >= best_score - eps"
+        candidates = [x for x in best_lag_scores if x[1] >= max_score - best_lag_tie_eps]
+        
+        # 3. Pick smallest lag among candidates
+        # candidate tuple: (lag, score, mean, stderr, n)
+        # Sort by lag ascending
+        candidates.sort(key=lambda x: x[0])
+        chosen = candidates[0]
+        
+        best_lag = chosen[0]
+        details = {
+            "best_lag_score": chosen[1],
+            "best_lag_mean": chosen[2],
+            "best_lag_stderr": chosen[3],
+            "best_lag_support": chosen[4],
+        }
 
     # Sum the top_k energies (based on MEAN energy, for consistency).
     energies_sorted = sorted((energy for _, energy in valid_energies), reverse=True)
     energy_sum = sum(energies_sorted[:top_k])
 
-    return energy_sum, best_lag, lag_energies if return_full else None
+    return energy_sum, best_lag, lag_energies if return_full else None, details
 
 
 def _mean(values: Iterable[float]) -> float:
@@ -169,10 +193,15 @@ def estimate_base_period(
         return best_lag
         
     # Sort by energy descending
+    # Sort by energy descending
     valid.sort(key=lambda x: x[1], reverse=True)
     
-    # Take top K
-    top_candidates = valid[:top_k]
+    # Filter candidates to be within a reasonable ratio of the max energy
+    best_val = valid[0][1]
+    threshold = best_val * 0.85
+    
+    top_candidates = [x for x in valid if x[1] >= threshold]
+    top_candidates = top_candidates[:top_k]
     
     # Return smallest lag
     top_candidates.sort(key=lambda x: x[0])
@@ -263,18 +292,20 @@ def estimate_base_period_comb(
     weights: list[float] | None = None,
     tau: float = 32.0,
     min_hits: int = 2,
-) -> tuple[int | None, bool]: # returns (L0, is_fallback)
-    """Estimate base period using a harmonic comb filter on prominence.
+    max_lag: int | None = None,
+    min_support: int | None = None,
+    include_best_lag: bool = False,
+    best_lag: int | None = None,
+    tie_eps: float = 1e-6,
+) -> tuple[int | None, bool, dict]:
+    """Estimate the base period (L0) using a harmonic comb filter.
 
-    Args:
-        lag_energies: Raw lag energies.
-        prominence: Lag prominence values.
-        min_lag: Minimum lag to consider.
-        harmonics: List of harmonic multipliers (e.g. [1, 2, 4, 8]).
-        weights: Weights corresponding to harmonics.
+    Candidates are selected from local peaks in the prominence map. By default,
+    the simple best energy lag is NOT included unless ``include_best_lag`` is True,
+    to avoid bias from high-energy tail noise.
 
     Returns:
-        Tuple (estimated_l0, is_fallback).
+        Tuple (estimated_l0, is_fallback, details_dict).
     """
     import math
 
@@ -303,29 +334,42 @@ def estimate_base_period_comb(
         if p_val >= get_p(i-1) and p_val > get_p(i+1):
             peak_indices.append(i)
             
-    # Always include global max energy lag as candidate
-    best_lag_energy = -1.0
-    best_lag_idx = None
-    for i in range(min_lag, N):
-        e = lag_energies[i]
-        if e is not None and e > best_lag_energy:
-            best_lag_energy = e
-            best_lag_idx = i
-            
-    if best_lag_idx is not None:
-        candidates.add(best_lag_idx)
+    # Always include global max energy lag as candidate IF requested
+    if include_best_lag:
+        best_lag_energy = -1.0
+        best_lag_idx = None
+        for i in range(min_lag, N):
+            e = lag_energies[i]
+            if e is not None and e > best_lag_energy:
+                best_lag_energy = e
+                best_lag_idx = i
+                
+        if best_lag_idx is not None:
+            candidates.add(best_lag_idx)
 
     # Add top N peaks from prominence
     peak_indices.sort(key=lambda i: get_p(i), reverse=True)
     for p in peak_indices[:30]:
         candidates.add(p)
         
+    if include_best_lag and best_lag is not None:
+        candidates.add(best_lag)
+    
+    # Apply constraints (max_lag, min_support)
+    # Filter candidates
+    filtered_candidates = set()
+    for c in candidates:
+        if c < min_lag: continue
+        if max_lag is not None and c > max_lag: continue
+        if min_support is not None and (N - c) < min_support: continue
+        filtered_candidates.add(c)
+    candidates = filtered_candidates
+
     if not candidates:
-        return best_lag_idx, True  # Fallback to best energy lag
+        return None, True, {}
 
     # Score candidates
-    best_score = -float('inf')
-    best_l0 = best_lag_idx
+    scored_candidates = []
     
     # Memoize max index
     max_idx = N - 1
@@ -354,37 +398,32 @@ def estimate_base_period_comb(
         if positive_peaks_hit < min_hits:
             continue
         
-        # Penalize single-hit wonders if possible?
-        # User spec: "Prioritize if positive prom >= 2"
-        # We can simulate this by boosting score or requiring it.
-        # Let's add a small boost for hits > 1 to break ties
+        # Boost for hits > 1 to break ties
         if positive_peaks_hit >= 2:
             score *= 1.1 
-        
-        if score > best_score:
-            best_score = score
-            best_l0 = cand
             
-    # If score is effectively zero/low, maybe fallback?
-    # Spec says "if fails (candidates empty? or no valid score?), fallback"
-    # Logic implies if we have candidates we return best Comb L0.
-    
-    # One edge case: if best_l0 differs from best_lag_idx drastically and has low score,
-    # it might be noise. But user didn't specify threshold.
-    # We report is_fallback=False if we used Comb logic.
-    # Actually, if the score is 0, it means no harmonics aligned with prominence.
-    # In that case, we should probably fallback to best_lag.
-    
-    # If best_score is still -inf (no candidates passed min_hits), fallback.
-    if best_score == -float('inf'):
-         # Prefer estimate_base_period (smallest of top peaks) over raw best_lag
-         fallback_l0 = estimate_base_period(lag_energies, min_lag)
-         if fallback_l0 is not None:
-             return fallback_l0, True
-         # If that fails (no peaks), use best_lag_idx (max energy)
-         return best_lag_idx, True
+        scored_candidates.append((cand, score, positive_peaks_hit))
 
-    return best_l0, False
+    # If score is effectively zero/low, fallback.
+    if not scored_candidates:
+        # User requested NaN on failure.
+        return None, True, {}
+        
+    # Find best score
+    max_score = max(x[1] for x in scored_candidates)
+    
+    # Tie-break: candidates within eps of max_score
+    top_tier = [x for x in scored_candidates if x[1] >= max_score - tie_eps]
+    
+    # Pick smallest lag
+    top_tier.sort(key=lambda x: x[0])
+    best_cand = top_tier[0]
+    
+    return best_cand[0], False, {
+        "score": best_cand[1],
+        "hits": best_cand[2],
+        "candidates": len(scored_candidates)
+    }
 
 
 def compute_hierarchy_index_auto_slope(
